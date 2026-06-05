@@ -93,11 +93,17 @@ The current demo implements:
 - Environment-backed local configuration
 - Live `wttr.in` requests with `wttr.is` fallback
 - Provider response normalization
+- Atomic JSON snapshot cache with a configurable 12-hour freshness limit
+- Automatic cache fallback when both live providers fail
 - Commute-aware umbrella guidance
 - UV and sunscreen guidance
 - Summer-oriented clothing guidance
 - Dynamic subject and three key time periods
 - Plain-text terminal preview
 
-Caching, HTML email rendering, SMTP delivery, and the `send` command remain
-for later Phase 1 work.
+HTML email rendering, SMTP delivery, and the `send` command remain for later
+Phase 1 work.
+
+The default cache path is `var/weather_snapshot.json`. It is excluded from
+version control and can be changed with `CACHE_PATH`. Cached data older than
+`CACHE_MAX_AGE_HOURS` is rejected rather than used to generate advice.

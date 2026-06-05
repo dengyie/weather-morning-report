@@ -4,13 +4,23 @@ from weather_morning_report.models import WeatherSnapshot
 from weather_morning_report.recommendations import ReportAdvice
 
 
-def render_text(snapshot: WeatherSnapshot, advice: ReportAdvice) -> str:
+def render_text(
+    snapshot: WeatherSnapshot,
+    advice: ReportAdvice,
+    *,
+    cached: bool = False,
+) -> str:
     period_lines = "\n".join(
         f"{period.label}：{period.summary}" for period in advice.periods
     )
+    cache_notice = (
+        f"注意：实时天气源暂时不可用，以下建议基于 {snapshot.fetched_at:%Y-%m-%d %H:%M %Z} 的缓存数据。\n\n"
+        if cached
+        else ""
+    )
     return f"""主题：{advice.subject}
 
-早上好。
+{cache_notice}早上好。
 
 今日重点：{advice.focus}
 带伞：{advice.umbrella}
@@ -28,4 +38,3 @@ def render_text(snapshot: WeatherSnapshot, advice: ReportAdvice) -> str:
 
 数据来源：{snapshot.source}，获取时间：{snapshot.fetched_at:%Y-%m-%d %H:%M %Z}
 """
-
