@@ -9,6 +9,7 @@ from weather_morning_report.models import WeatherSnapshot
 from weather_morning_report.providers.base import ProviderError, WeatherProvider
 from weather_morning_report.providers.wttr import WttrProvider
 from weather_morning_report.recommendations import recommend
+from weather_morning_report.rendering.html import render_html
 from weather_morning_report.rendering.text import render_text
 
 
@@ -36,7 +37,7 @@ def load_snapshot(
     return SnapshotResult(snapshot, cached=False)
 
 
-def preview(config: Config) -> str:
+def preview(config: Config, *, output_format: str = "text") -> str:
     provider = WttrProvider(
         location_name=config.location_name,
         location_query=config.location_query,
@@ -44,8 +45,9 @@ def preview(config: Config) -> str:
     )
     cache = SnapshotCache(config.cache_path, config.cache_max_age)
     result = load_snapshot(provider, cache, datetime.now(config.timezone))
-    return render_text(
-        result.snapshot,
-        recommend(result.snapshot),
-        cached=result.cached,
-    )
+    advice = recommend(result.snapshot)
+    if output_format == "html":
+        return render_html(result.snapshot, advice, cached=result.cached)
+    if output_format == "text":
+        return render_text(result.snapshot, advice, cached=result.cached)
+    raise ValueError(f"unsupported output format: {output_format}")

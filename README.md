@@ -34,6 +34,7 @@ fallback:
 ```bash
 .venv/bin/weather-report validate-config
 .venv/bin/weather-report preview
+.venv/bin/weather-report preview --format html > report.html
 ```
 
 Configuration can be customized with environment variables documented in
@@ -100,9 +101,9 @@ The current demo implements:
 - Summer-oriented clothing guidance
 - Dynamic subject and three key time periods
 - Plain-text terminal preview
+- Responsive, email-friendly HTML preview without remote assets or JavaScript
 
-HTML email rendering, SMTP delivery, and the `send` command remain for later
-Phase 1 work.
+SMTP delivery and the `send` command remain for later Phase 1 work.
 
 The default cache path is `var/weather_snapshot.json`. It is excluded from
 version control and can be changed with `CACHE_PATH`. Cached data older than

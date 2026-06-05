@@ -12,11 +12,19 @@ from weather_morning_report.service import preview
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="weather-report")
-    parser.add_argument(
-        "command",
-        choices=("preview", "send", "validate-config"),
-        help="Operation to perform",
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    preview_parser = subparsers.add_parser(
+        "preview",
+        help="Render a live report preview",
     )
+    preview_parser.add_argument(
+        "--format",
+        choices=("text", "html"),
+        default="text",
+        help="Preview output format",
+    )
+    subparsers.add_parser("send", help="Send the report (not implemented yet)")
+    subparsers.add_parser("validate-config", help="Validate local configuration")
     return parser
 
 
@@ -28,7 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Configuration is valid.")
             return 0
         if args.command == "preview":
-            print(preview(config), end="")
+            print(preview(config, output_format=args.format), end="")
             return 0
         raise SystemExit("'send' is not implemented yet")
     except (ProviderError, ValueError) as exc:

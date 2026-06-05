@@ -6,6 +6,13 @@ def test_parser_accepts_documented_commands() -> None:
         assert build_parser().parse_args([command]).command == command
 
 
+def test_preview_parser_accepts_html_format() -> None:
+    args = build_parser().parse_args(["preview", "--format", "html"])
+
+    assert args.command == "preview"
+    assert args.format == "html"
+
+
 def test_validate_config_succeeds(capsys) -> None:
     assert main(["validate-config"]) == 0
     assert capsys.readouterr().out == "Configuration is valid.\n"
