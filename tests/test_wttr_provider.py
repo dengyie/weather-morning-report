@@ -53,7 +53,7 @@ def payload(
                 "uvIndex": str(uv),
                 "hourly": [
                     hour("900", morning_rain, "Light rain" if morning_rain else "Sunny", 5),
-                    hour("1200", midday_rain, "Light drizzle", uv),
+                    hour("1200", midday_rain, "Light drizzle" if midday_rain else "Sunny", uv),
                     hour("1800", evening_rain, "Light rain" if evening_rain else "Cloudy", 0),
                 ],
             }
@@ -106,4 +106,3 @@ def test_provider_falls_back_to_second_host(monkeypatch) -> None:
     monkeypatch.setattr(provider, "_request", request)
 
     assert provider.fetch().source == "fallback"
-

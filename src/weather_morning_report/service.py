@@ -43,6 +43,18 @@ def load_snapshot(
     return SnapshotResult(snapshot, cached=False)
 
 
+def validate_configuration(config: Config) -> str:
+    settings = load_delivery_settings(config.settings_path)
+    settings.validate(require_complete=True)
+    provider = WttrProvider(
+        location_name=config.location_name,
+        location_query=config.location_query,
+        timezone=config.timezone,
+    )
+    snapshot = provider.fetch()
+    return f"Configuration is valid; weather provider reachable via {snapshot.source}."
+
+
 def preview(config: Config, *, output_format: str = "text") -> str:
     provider = WttrProvider(
         location_name=config.location_name,
@@ -50,8 +62,9 @@ def preview(config: Config, *, output_format: str = "text") -> str:
         timezone=config.timezone,
     )
     cache = SnapshotCache(config.cache_path, config.cache_max_age)
-    result = load_snapshot(provider, cache, datetime.now(config.timezone))
-    advice = recommend(result.snapshot)
+    now = datetime.now(config.timezone)
+    result = load_snapshot(provider, cache, now)
+    advice = recommend(result.snapshot, report_date=now.date())
     if output_format == "html":
         return render_html(result.snapshot, advice, cached=result.cached)
     if output_format == "text":
@@ -68,12 +81,13 @@ def send_report(config: Config) -> str:
         timezone=config.timezone,
     )
     cache = SnapshotCache(config.cache_path, config.cache_max_age)
+    now = datetime.now(config.timezone)
     try:
-        result = load_snapshot(provider, cache, datetime.now(config.timezone))
+        result = load_snapshot(provider, cache, now)
     except ProviderError as exc:
         notify_admin_failure(settings, exc)
         return f"Weather report skipped; administrator notified at {settings.admin_email}."
-    advice = recommend(result.snapshot)
+    advice = recommend(result.snapshot, report_date=now.date())
     message = build_report_message(
         settings,
         subject=advice.subject,

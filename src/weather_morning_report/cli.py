@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from weather_morning_report.config import Config
 from weather_morning_report.providers.base import ProviderError
-from weather_morning_report.service import preview, send_report
+from weather_morning_report.service import preview, send_report, validate_configuration
 from weather_morning_report.webui import serve_settings
 
 
@@ -41,7 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = Config.from_env()
         if args.command == "validate-config":
-            print("Configuration is valid.")
+            print(validate_configuration(config))
             return 0
         if args.command == "preview":
             print(preview(config, output_format=args.format), end="")

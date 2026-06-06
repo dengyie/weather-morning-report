@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, time
 
 from weather_morning_report.models import HourlyForecast, WeatherCondition, WeatherSnapshot
+from weather_morning_report.recommendations.periods import schedule_for
 
 RAIN = {
     WeatherCondition.DRIZZLE,
@@ -13,6 +14,11 @@ RAIN = {
     WeatherCondition.HEAVY_RAIN,
     WeatherCondition.THUNDERSTORM,
 }
+
+THUNDER_PROBABILITY_THRESHOLD = 40
+MEANINGFUL_PRECIPITATION_MM = 0.5
+STRONG_WIND_KPH = 40
+DANGEROUS_HEAT_C = 38
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,16 +38,32 @@ class ReportAdvice:
     periods: tuple[PeriodAdvice, ...]
 
 
-def recommend(snapshot: WeatherSnapshot) -> ReportAdvice:
-    morning = _between(snapshot, time(7), time(10))
-    midday = _between(snapshot, time(11), time(15))
-    evening = _between(snapshot, time(17), time(20))
-    commute = morning + evening
-    all_points = morning + midday + evening
+def recommend(
+    snapshot: WeatherSnapshot,
+    *,
+    report_date: date | None = None,
+) -> ReportAdvice:
+    schedule = schedule_for(report_date or snapshot.daily.forecast_date)
+    period_points = tuple(
+        _between(snapshot, period.start, period.end) for period in schedule.periods
+    )
+    morning, midday, evening = period_points
+    primary_outing = morning + evening if schedule.is_workday else sum(period_points, ())
+    all_points = sum(period_points, ())
 
-    commute_rain = _rain_risk(commute)
+    primary_rain = _rain_risk(primary_outing)
     midday_rain = _rain_risk(midday)
-    thunder = any(point.condition == WeatherCondition.THUNDERSTORM for point in all_points)
+    thunder = any(
+        point.condition == WeatherCondition.THUNDERSTORM
+        or (point.thunder_probability_percent or 0) >= THUNDER_PROBABILITY_THRESHOLD
+        for point in all_points
+    )
+    heavy_rain = any(point.condition == WeatherCondition.HEAVY_RAIN for point in all_points)
+    strongest_wind = max(
+        [snapshot.current.wind_speed_kph or 0]
+        + [point.wind_speed_kph or 0 for point in all_points]
+    )
+    strong_wind = strongest_wind >= STRONG_WIND_KPH
     uv = max(
         [snapshot.daily.uv_index or 0]
         + [point.uv_index or 0 for point in midday]
@@ -54,9 +76,22 @@ def recommend(snapshot: WeatherSnapshot) -> ReportAdvice:
     if thunder:
         subject = "[雷雨风险，注意安全] 天气早报"
         focus = "今天有雷雨风险，外出留意天气变化"
-    elif commute_rain >= 45:
-        subject = "[通勤有雨，记得带伞] 天气早报"
-        focus = "通勤时段可能有雨"
+    elif heavy_rain:
+        subject = "[有较强降雨，注意出行] 天气早报"
+        focus = "今天有较强降雨，外出注意积水和路况"
+    elif strong_wind:
+        subject = "[今天风大，注意安全] 天气早报"
+        focus = "今天风力较强，外出注意安全"
+    elif max_feels >= DANGEROUS_HEAT_C:
+        subject = "[高温风险，注意防暑] 天气早报"
+        focus = "今天体感炎热，注意防暑降温"
+    elif primary_rain >= 45:
+        subject = (
+            "[通勤有雨，记得带伞] 天气早报"
+            if schedule.is_workday
+            else "[出行有雨，记得带伞] 天气早报"
+        )
+        focus = "通勤时段可能有雨" if schedule.is_workday else "今天外出可能遇到雨"
     elif max_feels >= 32:
         subject = "[今天闷热，穿轻薄些] 天气早报"
         focus = "今天体感偏热，注意通风补水"
@@ -70,14 +105,21 @@ def recommend(snapshot: WeatherSnapshot) -> ReportAdvice:
         subject = "[天气舒服，适合出门] 天气早报"
         focus = "今天整体天气平稳"
 
-    umbrella = _umbrella(commute_rain, midday_rain, thunder)
+    umbrella = _umbrella(primary_rain, midday_rain, thunder)
     sunscreen = _sunscreen(uv)
-    clothing = _clothing(max_feels, all_points, max(commute_rain, midday_rain))
-    closing = _closing(thunder, max(commute_rain, midday_rain), max_feels, uv)
-    periods = (
-        PeriodAdvice("早通勤", _period_summary(morning)),
-        PeriodAdvice("午间", _period_summary(midday)),
-        PeriodAdvice("晚通勤", _period_summary(evening)),
+    rain_risk = max(primary_rain, midday_rain)
+    clothing = _clothing(max_feels, all_points, rain_risk, strong_wind)
+    closing = _closing(
+        thunder,
+        heavy_rain,
+        strong_wind,
+        rain_risk,
+        max_feels,
+        uv,
+    )
+    periods = tuple(
+        PeriodAdvice(period.label, _period_summary(points))
+        for period, points in zip(schedule.periods, period_points, strict=True)
     )
     return ReportAdvice(subject, focus, umbrella, sunscreen, clothing, closing, periods)
 
@@ -98,8 +140,11 @@ def _rain_risk(points: tuple[HourlyForecast, ...]) -> int:
     if not points:
         return 0
     explicit_rain = any(point.condition in RAIN for point in points)
+    meaningful_precipitation = any(
+        (point.precipitation_mm or 0) >= MEANINGFUL_PRECIPITATION_MM for point in points
+    )
     probability = max(point.precipitation_probability_percent or 0 for point in points)
-    return max(probability, 45 if explicit_rain else 0)
+    return max(probability, 45 if explicit_rain or meaningful_precipitation else 0)
 
 
 def _umbrella(commute_rain: int, midday_rain: int, thunder: bool) -> str:
@@ -124,6 +169,7 @@ def _clothing(
     max_feels: float,
     points: tuple[HourlyForecast, ...],
     rain_risk: int,
+    strong_wind: bool,
 ) -> str:
     if max_feels >= 32:
         text = "短袖或透气薄上衣搭配轻薄下装，注意通风散热"
@@ -137,6 +183,8 @@ def _clothing(
         text += "；优先选择透气、易干的面料"
     if rain_risk >= 45:
         text += "；避免容易吸水的鞋"
+    if strong_wind:
+        text += "；可带防风外层并收好易被吹动的物品"
     return text
 
 
@@ -152,9 +200,22 @@ def _period_summary(points: tuple[HourlyForecast, ...]) -> str:
     return f"{representative.description}，降雨概率最高 {rain}% ，体感约 {feels}°C"
 
 
-def _closing(thunder: bool, rain: int, max_feels: float, uv: float) -> str:
+def _closing(
+    thunder: bool,
+    heavy_rain: bool,
+    strong_wind: bool,
+    rain: int,
+    max_feels: float,
+    uv: float,
+) -> str:
     if thunder:
         return "雷雨时尽量减少户外停留，路上注意安全。"
+    if heavy_rain:
+        return "今天降雨较强，外出留意积水和路况。"
+    if strong_wind:
+        return "今天风力较强，外出注意高空坠物和随身物品。"
+    if max_feels >= DANGEROUS_HEAT_C:
+        return "今天体感炎热，尽量避开长时间户外活动并及时补水。"
     if rain >= 45:
         return "今天可能下雨，回家路上慢一点。"
     if max_feels >= 32:
@@ -162,4 +223,3 @@ def _closing(thunder: bool, rain: int, max_feels: float, uv: float) -> str:
     if uv >= 6:
         return "午间阳光强，出门记得做好防晒。"
     return "今天天气还算舒服，祝你一天顺利。"
-

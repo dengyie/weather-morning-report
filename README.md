@@ -42,6 +42,9 @@ fallback:
 Configuration can be customized with environment variables documented in
 `.env.example`.
 
+`weather-report validate-config` verifies complete delivery settings and
+fetches a live weather snapshot without sending email.
+
 `weather-report settings` opens a local-only Web UI at `127.0.0.1:8766` for
 recipient, administrator, and SMTP settings. Settings are stored in
 `var/settings.json` with file permission `600`; this directory is excluded
@@ -107,6 +110,7 @@ The current demo implements:
 - UV and sunscreen guidance
 - Summer-oriented clothing guidance
 - Dynamic subject and three key time periods
+- Automatic weekday commute and weekend outing period selection
 - Plain-text terminal preview
 - Responsive, email-friendly HTML preview without remote assets or JavaScript
 - Local-only Web UI for recipient, administrator, and SMTP configuration
@@ -114,6 +118,8 @@ The current demo implements:
 - Test-email delivery to the administrator from the settings UI
 - Multipart HTML and plain-text delivery with `weather-report send`
 - Administrator-only failure notification when weather and cache are unavailable
+- Risk-first handling for thunder probability, heavy rain, strong wind, and
+  dangerous heat
 
 When all live weather providers fail, a cached snapshot no older than the
 configured limit is used and clearly labeled. If no usable cache exists, the
@@ -122,3 +128,10 @@ recipient receives nothing and only the administrator is notified.
 The default cache path is `var/weather_snapshot.json`. It is excluded from
 version control and can be changed with `CACHE_PATH`. Cached data older than
 `CACHE_MAX_AGE_HOURS` is rejected rather than used to generate advice.
+
+## Deployment
+
+The included systemd timer runs `weather-report send` every day at 08:30
+`Asia/Shanghai`, independently of the VPS host timezone. See
+[docs/deployment.md](docs/deployment.md) for installation, validation, logging,
+and rollback instructions.

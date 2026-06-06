@@ -1,3 +1,4 @@
+from weather_morning_report import cli
 from weather_morning_report.cli import build_parser, main
 
 
@@ -13,6 +14,15 @@ def test_preview_parser_accepts_html_format() -> None:
     assert args.format == "html"
 
 
-def test_validate_config_succeeds(capsys) -> None:
+def test_validate_config_succeeds(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "validate_configuration",
+        lambda config: "Configuration is valid; weather provider reachable via fixture.",
+    )
+
     assert main(["validate-config"]) == 0
-    assert capsys.readouterr().out == "Configuration is valid.\n"
+    assert (
+        capsys.readouterr().out
+        == "Configuration is valid; weather provider reachable via fixture.\n"
+    )

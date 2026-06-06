@@ -71,6 +71,24 @@ def test_provider_failure_rejects_stale_cache(tmp_path) -> None:
         )
 
 
+def test_validate_configuration_checks_delivery_and_weather(tmp_path, monkeypatch) -> None:
+    snapshot = weather_snapshot()
+    monkeypatch.setattr(service, "load_delivery_settings", lambda path: complete_settings())
+
+    class StubWttrProvider:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def fetch(self):
+            return snapshot
+
+    monkeypatch.setattr(service, "WttrProvider", StubWttrProvider)
+
+    result = service.validate_configuration(config(tmp_path))
+
+    assert result == "Configuration is valid; weather provider reachable via fixture."
+
+
 def config(tmp_path) -> Config:
     return Config(
         timezone=SHANGHAI,
