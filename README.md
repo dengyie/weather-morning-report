@@ -1,5 +1,7 @@
 # Weather Morning Report
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Weather Morning Report generates and emails a concise, action-oriented personal
 weather briefing. It highlights whether to carry an umbrella, what to wear,
 whether sunscreen is needed, and which parts of the day have meaningful
