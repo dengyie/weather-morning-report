@@ -3,6 +3,7 @@ from http.server import ThreadingHTTPServer
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from weather_morning_report import webui
 from weather_morning_report.settings import SettingsStore
 from weather_morning_report.webui import _settings_from_form, make_handler
 from test_settings import complete_settings
@@ -63,3 +64,39 @@ def test_local_web_ui_saves_settings(tmp_path) -> None:
         thread.join()
         server.server_close()
 
+
+def test_local_web_ui_sends_test_email(tmp_path, monkeypatch) -> None:
+    store = SettingsStore(tmp_path / "settings.json")
+    store.save(complete_settings())
+    monkeypatch.setattr(webui, "send_test_email", lambda settings: "sent")
+    token = "test-token"
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store, token))
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        settings = complete_settings()
+        form = {
+            "csrf_token": token,
+            "recipient_name": settings.recipient_name,
+            "recipient_email": settings.recipient_email,
+            "admin_email": settings.admin_email,
+            "sender_email": settings.sender_email,
+            "smtp_host": settings.smtp_host,
+            "smtp_port": str(settings.smtp_port),
+            "smtp_username": settings.smtp_username,
+            "smtp_password": "",
+            "smtp_security": settings.smtp_security,
+        }
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}/send-test-email",
+            data=urlencode(form).encode(),
+            method="POST",
+        )
+
+        response = urlopen(request).read().decode()
+
+        assert "测试邮件已发送至管理员邮箱 admin@example.com" in response
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()

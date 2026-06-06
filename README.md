@@ -36,10 +36,11 @@ fallback:
 .venv/bin/weather-report preview
 .venv/bin/weather-report preview --format html > report.html
 .venv/bin/weather-report settings
+.venv/bin/weather-report send
 ```
 
 Configuration can be customized with environment variables documented in
-`.env.example`. The `send` command is reserved but is not implemented yet.
+`.env.example`.
 
 `weather-report settings` opens a local-only Web UI at `127.0.0.1:8766` for
 recipient, administrator, and SMTP settings. Settings are stored in
@@ -110,9 +111,13 @@ The current demo implements:
 - Responsive, email-friendly HTML preview without remote assets or JavaScript
 - Local-only Web UI for recipient, administrator, and SMTP configuration
 - SMTP connection and authentication test from the settings UI
+- Test-email delivery to the administrator from the settings UI
+- Multipart HTML and plain-text delivery with `weather-report send`
+- Administrator-only failure notification when weather and cache are unavailable
 
-Actual SMTP report delivery and the `send` command remain for later Phase 1
-work.
+When all live weather providers fail, a cached snapshot no older than the
+configured limit is used and clearly labeled. If no usable cache exists, the
+recipient receives nothing and only the administrator is notified.
 
 The default cache path is `var/weather_snapshot.json`. It is excluded from
 version control and can be changed with `CACHE_PATH`. Cached data older than

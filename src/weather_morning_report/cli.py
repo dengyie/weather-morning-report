@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import smtplib
 from collections.abc import Sequence
 
 from weather_morning_report.config import Config
 from weather_morning_report.providers.base import ProviderError
-from weather_morning_report.service import preview
+from weather_morning_report.service import preview, send_report
 from weather_morning_report.webui import serve_settings
 
 
@@ -24,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Preview output format",
     )
-    subparsers.add_parser("send", help="Send the report (not implemented yet)")
+    subparsers.add_parser("send", help="Generate and send the weather report")
     subparsers.add_parser("validate-config", help="Validate local configuration")
     settings_parser = subparsers.add_parser(
         "settings",
@@ -52,8 +53,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 open_browser=not args.no_browser,
             )
             return 0
-        raise SystemExit("'send' is not implemented yet")
-    except (ProviderError, ValueError) as exc:
+        if args.command == "send":
+            print(send_report(config))
+            return 0
+    except (OSError, ProviderError, ValueError, smtplib.SMTPException) as exc:
         print(f"Error: {exc}")
         return 1
 

@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from weather_morning_report.delivery.smtp import test_smtp_connection
+from weather_morning_report.delivery.smtp import send_test_email, test_smtp_connection
 from weather_morning_report.settings import DeliverySettings, SettingsStore
 
 
@@ -44,7 +44,7 @@ def make_handler(store: SettingsStore, token: str) -> type[BaseHTTPRequestHandle
             self._render(store.load())
 
         def do_POST(self) -> None:
-            if self.path not in {"/save", "/test-smtp"}:
+            if self.path not in {"/save", "/test-smtp", "/send-test-email"}:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
             try:
@@ -57,9 +57,16 @@ def make_handler(store: SettingsStore, token: str) -> type[BaseHTTPRequestHandle
                 if self.path == "/save":
                     store.save(settings)
                     self._render(settings, "设置已保存。", "success")
-                else:
+                elif self.path == "/test-smtp":
                     test_smtp_connection(settings)
                     self._render(settings, "SMTP 连接和登录验证成功。", "success")
+                else:
+                    send_test_email(settings)
+                    self._render(
+                        settings,
+                        f"测试邮件已发送至管理员邮箱 {settings.admin_email}。",
+                        "success",
+                    )
             except (OSError, ValueError, smtplib.SMTPException) as exc:
                 self._render(
                     locals().get("settings", store.load()),
@@ -194,6 +201,7 @@ def _page(
         <div class="actions">
           <button class="primary" type="submit" formaction="/save">保存设置</button>
           <button class="secondary" type="submit" formaction="/test-smtp">测试 SMTP 连接</button>
+          <button class="secondary" type="submit" formaction="/send-test-email">发送测试邮件</button>
         </div>
       </form>
     </div>
