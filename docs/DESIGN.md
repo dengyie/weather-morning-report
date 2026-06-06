@@ -6,8 +6,9 @@ Delivery schedule: 08:30 Asia/Shanghai
 
 ## Product Goal
 
-Generate a concise personal weather report that communicates useful actions
-within ten seconds:
+Generate concise personalized weather reports that communicate useful actions
+within ten seconds. Reports may be sent to one person or to multiple
+recipients, each with an independent email address and weather location:
 
 - Whether to carry an umbrella
 - What to wear
@@ -36,7 +37,9 @@ Weekends use:
 The subject contains one highest-priority action. The body contains the primary
 focus, umbrella guidance, sunscreen guidance, clothing advice, three period
 summaries, current conditions, daily temperature range, and a short closing.
-When a recipient name is configured, it is used only in the greeting.
+When a recipient name is configured, it is used only in the greeting. Each
+recipient receives an individual email; addresses are never exposed to other
+recipients.
 
 ## Recommendation Priorities
 
@@ -67,6 +70,9 @@ weather snapshot before recommendation or rendering.
 Successful snapshots are saved atomically. If all live providers fail, a cached
 snapshot may be used only while it is within the configured freshness limit,
 which defaults to 12 hours. Cached reports display their data time.
+
+Batch delivery groups recipients by location. Each location is fetched once
+per run and uses an independent cache file.
 
 Cache schema v1 remains rollback-compatible. New snapshots continue writing the
 legacy `location.latitude`, `location.longitude`, `air_quality`, and `warnings`
@@ -109,6 +115,11 @@ settings must not block preview generation; they silently fall back to the
 generic greeting. `send` and `validate-config` strictly validate complete
 delivery settings.
 
+Delivery settings support the legacy single recipient fields and a recipient
+list containing name, email, location display name, and provider query. Future
+weather API credentials will be added at the provider configuration boundary,
+without changing recommendation or rendering modules.
+
 ## Security and Operations
 
 - No real names, email addresses, credentials, production `.env` files, or
@@ -126,6 +137,8 @@ delivery settings.
 ## Acceptance Criteria
 
 - Provider fallback and cache freshness behavior are tested.
+- Multiple recipients, per-recipient locations, grouped weather fetches, and
+  address privacy are tested.
 - Umbrella, UV, clothing, severe-weather, workday, and weekend rules are tested.
 - HTML and plain-text reports remain readable and use the configured greeting.
 - Preview remains available when delivery settings are missing or invalid.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from email.message import EmailMessage
 
-from weather_morning_report.settings import DeliverySettings
+from weather_morning_report.settings import DeliverySettings, RecipientSettings
 
 
 def build_report_message(
@@ -13,12 +13,13 @@ def build_report_message(
     subject: str,
     text: str,
     html: str,
+    recipient: RecipientSettings | None = None,
 ) -> EmailMessage:
     settings.validate(require_complete=True)
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.sender_email
-    message["To"] = settings.recipient_email
+    message["To"] = recipient.email if recipient else settings.recipient_email
     message.set_content(text)
     message.add_alternative(html, subtype="html")
     return message

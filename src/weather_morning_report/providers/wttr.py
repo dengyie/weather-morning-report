@@ -57,7 +57,7 @@ class WttrProvider:
         query = quote(self.location_query, safe=",")
         request = Request(
             f"https://{host}/{query}?format=j1",
-            headers={"User-Agent": "weather-morning-report/0.1"},
+            headers={"User-Agent": "weather-morning-report/0.2"},
         )
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
@@ -190,4 +190,3 @@ def _int(data: JsonObject, key: str) -> int:
 
 def _float(data: JsonObject, key: str) -> float:
     return float(data[key])
-

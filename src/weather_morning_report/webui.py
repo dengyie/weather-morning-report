@@ -12,7 +12,11 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from weather_morning_report.delivery.smtp import send_test_email, test_smtp_connection
-from weather_morning_report.settings import DeliverySettings, SettingsStore
+from weather_morning_report.settings import (
+    DeliverySettings,
+    RecipientSettings,
+    SettingsStore,
+)
 
 
 def serve_settings(
@@ -114,6 +118,7 @@ def _settings_from_form(
         return form.get(name, [""])[0].strip()
 
     password = form.get("smtp_password", [""])[0] or existing_password
+    recipients = _parse_recipients(value("recipients"))
     settings = DeliverySettings(
         recipient_name=value("recipient_name"),
         recipient_email=value("recipient_email"),
@@ -124,9 +129,24 @@ def _settings_from_form(
         smtp_username=value("smtp_username"),
         smtp_password=password,
         smtp_security=value("smtp_security") or "starttls",
+        recipients=recipients,
     )
     settings.validate()
     return settings
+
+
+def _parse_recipients(value: str) -> tuple[RecipientSettings, ...]:
+    recipients = []
+    for line_number, line in enumerate(value.splitlines(), start=1):
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split("|")]
+        if len(parts) != 4:
+            raise ValueError(
+                f"Recipient line {line_number} must contain name | email | location name | location query"
+            )
+        recipients.append(RecipientSettings(*parts))
+    return tuple(recipients)
 
 
 def _page(
@@ -145,6 +165,17 @@ def _page(
         f'<div class="notice {e(message_kind)}">{e(message)}</div>' if message else ""
     )
     password_hint = "已保存，留空表示保持不变" if settings.smtp_password else "SMTP 密码"
+    recipients = "\n".join(
+        " | ".join(
+            (
+                recipient.name,
+                recipient.email,
+                recipient.location_name,
+                recipient.location_query,
+            )
+        )
+        for recipient in settings.recipients
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -161,8 +192,9 @@ def _page(
     .muted {{ color: #6b7e89; margin-top: 0; }}
     .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
     label {{ display: block; color: #49616f; font-weight: bold; }}
-    input, select {{ width: 100%; margin-top: 6px; border: 1px solid #cbd7de; border-radius: 8px; padding: 10px 11px; font: inherit; background: white; }}
-    input:focus, select:focus {{ outline: 2px solid #8bc3e6; border-color: #4c99ca; }}
+    input, select, textarea {{ width: 100%; margin-top: 6px; border: 1px solid #cbd7de; border-radius: 8px; padding: 10px 11px; font: inherit; background: white; }}
+    input:focus, select:focus, textarea:focus {{ outline: 2px solid #8bc3e6; border-color: #4c99ca; }}
+    textarea {{ min-height: 150px; resize: vertical; }}
     .wide {{ grid-column: 1 / -1; }}
     .actions {{ display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }}
     button {{ border: 0; border-radius: 9px; padding: 11px 18px; font: inherit; font-weight: bold; cursor: pointer; }}
@@ -179,14 +211,19 @@ def _page(
   <main>
     <div class="card">
       <h1>天气早报设置</h1>
-      <p class="muted">配置收件人、管理员通知与 SMTP。页面仅监听本机 127.0.0.1。</p>
+      <p class="muted">配置人物、地区、管理员通知与 SMTP。页面默认仅监听本机 127.0.0.1。</p>
       {notice}
       <form method="post">
         <input type="hidden" name="csrf_token" value="{e(token)}">
-        <h2>邮件对象</h2>
+        <h2>人物与地区</h2>
+        <p class="muted">每行一个收件人，格式：称呼 | 邮箱 | 地区显示名称 | wttr 查询参数</p>
+        <label>收件人列表
+          <textarea name="recipients" placeholder="Alice | alice@example.com | Shanghai | Shanghai">{e(recipients)}</textarea>
+        </label>
+        <p class="muted">未配置列表时，继续使用下面的兼容单收件人字段和默认地区。</p>
         <div class="grid">
-          <label>收件人称呼<input name="recipient_name" value="{e(settings.recipient_name)}"></label>
-          <label>收件人邮箱<input type="email" name="recipient_email" value="{e(settings.recipient_email)}"></label>
+          <label>兼容单收件人称呼<input name="recipient_name" value="{e(settings.recipient_name)}"></label>
+          <label>兼容单收件人邮箱<input type="email" name="recipient_email" value="{e(settings.recipient_email)}"></label>
           <label>管理员邮箱<input type="email" name="admin_email" value="{e(settings.admin_email)}"></label>
           <label>发件人邮箱<input type="email" name="sender_email" value="{e(settings.sender_email)}"></label>
         </div>

@@ -1,1 +1,1 @@
-"""Generate an action-oriented personal weather morning report."""
+"""Generate action-oriented weather reports for one or many recipients."""

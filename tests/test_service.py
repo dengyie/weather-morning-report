@@ -8,6 +8,7 @@ from weather_morning_report.providers.wttr import parse_wttr_payload
 from weather_morning_report import service
 from weather_morning_report.config import Config
 from weather_morning_report.service import load_snapshot
+from weather_morning_report.settings import RecipientSettings
 from test_settings import complete_settings
 from test_wttr_provider import FETCHED_AT, SHANGHAI, payload
 
@@ -91,7 +92,11 @@ def test_validate_configuration_checks_delivery_and_weather(tmp_path, monkeypatc
 
 def test_preview_uses_configured_recipient_name(tmp_path, monkeypatch) -> None:
     snapshot = weather_snapshot()
-    monkeypatch.setattr(service, "load_recipient_name", lambda path: "Demo")
+    monkeypatch.setattr(
+        service,
+        "load_preview_recipient",
+        lambda path: RecipientSettings("Demo", "demo@example.com", "Shanghai", "Shanghai"),
+    )
     monkeypatch.setattr(
         service,
         "load_snapshot",
@@ -111,8 +116,8 @@ def test_preview_does_not_load_delivery_settings(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SMTP_PORT", "invalid")
     monkeypatch.setattr(
         service,
-        "load_delivery_settings",
-        lambda path: (_ for _ in ()).throw(AssertionError("delivery settings loaded")),
+        "load_preview_recipient",
+        lambda path: None,
     )
     monkeypatch.setattr(
         service,
@@ -134,6 +139,34 @@ def test_preview_ignores_malformed_settings_file(tmp_path, monkeypatch) -> None:
     )
 
     assert "早上好。" in service.preview(config_value)
+
+
+def test_validate_configuration_fetches_each_location_once(tmp_path, monkeypatch) -> None:
+    fetched = []
+    settings = complete_settings(
+        recipient_name="",
+        recipient_email="",
+        recipients=(
+            RecipientSettings("Alice", "alice@example.com", "Shanghai", "Shanghai"),
+            RecipientSettings("Bob", "bob@example.com", "Shanghai", "Shanghai"),
+            RecipientSettings("Carol", "carol@example.com", "Beijing", "Beijing"),
+        ),
+    )
+    monkeypatch.setattr(service, "load_delivery_settings", lambda path: settings)
+
+    class StubWttrProvider:
+        def __init__(self, *, location_name, **kwargs) -> None:
+            self.location_name = location_name
+
+        def fetch(self):
+            fetched.append(self.location_name)
+            return weather_snapshot()
+
+    monkeypatch.setattr(service, "WttrProvider", StubWttrProvider)
+
+    service.validate_configuration(config(tmp_path))
+
+    assert fetched == ["Shanghai", "Beijing"]
 
 
 def test_strict_commands_reject_invalid_delivery_settings(tmp_path, monkeypatch) -> None:
@@ -169,7 +202,7 @@ def test_send_report_sends_multipart_to_recipient(tmp_path, monkeypatch) -> None
 
     result = service.send_report(config(tmp_path))
 
-    assert result == "Weather report sent to recipient@example.com."
+    assert result == "Weather reports sent to 1 recipient(s)."
     assert sent[0]["To"] == "recipient@example.com"
     assert sent[0].is_multipart()
     assert "Demo，早上好。" in sent[0].get_body(preferencelist=("plain",)).get_content()
@@ -190,5 +223,43 @@ def test_send_report_notifies_only_admin_when_weather_unavailable(
 
     result = service.send_report(config(tmp_path))
 
-    assert result == "Weather report skipped; administrator notified at admin@example.com."
+    assert result == "Weather reports skipped; administrator notified at admin@example.com."
     assert [message["To"] for message in sent] == ["admin@example.com"]
+
+
+def test_send_report_batches_recipients_by_location(tmp_path, monkeypatch) -> None:
+    sent = []
+    fetched_locations = []
+    settings = complete_settings(
+        recipient_name="",
+        recipient_email="",
+        recipients=(
+            RecipientSettings("Alice", "alice@example.com", "Shanghai", "Shanghai"),
+            RecipientSettings("Bob", "bob@example.com", "Shanghai", "Shanghai"),
+            RecipientSettings("Carol", "carol@example.com", "Beijing", "Beijing"),
+        ),
+    )
+    monkeypatch.setattr(service, "load_delivery_settings", lambda path: settings)
+
+    class StubWttrProvider:
+        def __init__(self, *, location_name, **kwargs) -> None:
+            self.location_name = location_name
+
+        def fetch(self):
+            fetched_locations.append(self.location_name)
+            return weather_snapshot()
+
+    monkeypatch.setattr(service, "WttrProvider", StubWttrProvider)
+    monkeypatch.setattr(service, "send_message", lambda settings, message: sent.append(message))
+
+    result = service.send_report(config(tmp_path))
+
+    assert result == "Weather reports sent to 3 recipient(s)."
+    assert fetched_locations == ["Shanghai", "Beijing"]
+    assert [message["To"] for message in sent] == [
+        "alice@example.com",
+        "bob@example.com",
+        "carol@example.com",
+    ]
+    assert "Bob" not in str(sent[0])
+    assert "Alice，早上好。" in sent[0].get_body(preferencelist=("plain",)).get_content()

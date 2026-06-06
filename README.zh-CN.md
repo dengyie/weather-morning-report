@@ -2,9 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-天气早报会生成并发送一封简洁、以行动建议为重点的个人天气邮件，帮助你快速判断是否需要带伞、如何穿衣、是否需要防晒，以及一天中哪些时段存在值得注意的天气风险。
+天气早报是一个可自行部署的天气简报生成与邮件投递服务。它会把天气预报转换为简洁、以行动建议为重点的信息，帮助收件人快速判断是否需要带伞、如何穿衣、是否需要防晒，以及一天中哪些时段存在值得注意的天气风险。
 
-应用使用 `wttr.in` 获取天气，并自动回退至 `wttr.is`；同时提供带时效校验的本地天气快照缓存，并发送响应式 HTML 与纯文本邮件。
+你既可以每天给自己发送一封私人天气早报，也可以为家人、同事、订阅用户或其他有需要的人批量发送个性化报告。每位收件人都可以配置独立的称呼、邮箱和天气地区。同一地区只会获取一次天气数据，但每个人都会收到单独生成的邮件，不会看到其他收件人的邮箱信息。
+
+当前天气数据来自 `wttr.in`，失败时会自动回退至 `wttr.is`。项目使用与天气服务无关的 Provider 架构，后续可以继续增加可配置的天气 API 与凭据。应用还会为不同地区保存带时效校验的独立天气缓存，并发送响应式 HTML 与纯文本邮件。
 
 ## 下载
 
@@ -32,6 +34,8 @@ LOCATION_QUERY=Changning,Shanghai
 
 RECIPIENT_NAME=
 RECIPIENT_EMAIL=recipient@example.com
+# 配置多位收件人时，使用单行 JSON，并删除上面的兼容单人字段：
+# RECIPIENTS_JSON=[{"name":"Alice","email":"alice@example.com","location_name":"Shanghai","location_query":"Shanghai"}]
 ADMIN_EMAIL=admin@example.com
 SENDER_EMAIL=sender@example.com
 SMTP_HOST=smtp.example.com
@@ -60,7 +64,7 @@ docker compose up settings
 
 打开 <http://127.0.0.1:8766>，保存设置、测试 SMTP，然后使用 `Ctrl+C` 停止容器。
 
-设置页面仅发布到宿主机回环地址。如果使用设置页面，请删除 `.env` 中空白的 `RECIPIENT_*`、`ADMIN_EMAIL`、`SENDER_EMAIL` 和 `SMTP_*` 配置，因为环境变量的优先级高于已保存的设置。
+设置页面仅发布到宿主机回环地址，支持配置多位人物及其独立地区。如果使用设置页面，请删除 `.env` 中空白的 `RECIPIENT_*`、`RECIPIENTS_JSON`、`ADMIN_EMAIL`、`SENDER_EMAIL` 和 `SMTP_*` 配置，因为环境变量的优先级高于已保存的设置。
 
 ## 定时执行 Docker 任务
 
@@ -120,6 +124,8 @@ python3.12 -m venv .venv
 运行时默认值和支持的环境变量记录在 [`.env.example`](.env.example) 中。
 
 - 环境变量会覆盖通过浏览器设置页面保存的配置。
+- `RECIPIENTS_JSON` 用于配置多位收件人及其对应地区。
+- 旧的 `RECIPIENT_NAME` 和 `RECIPIENT_EMAIL` 仍然可用于单个收件人，并使用默认的 `LOCATION_NAME` 与 `LOCATION_QUERY`。
 - 原生部署的设置保存在 `var/settings.json`，文件权限为 `600`。
 - Docker 设置和天气快照保存在 `weather-report-data` 数据卷中。
 - `.env`、运行时数据、凭据和生成文件不会提交到 Git。
@@ -142,6 +148,12 @@ src/weather_morning_report/
 ```
 
 天气服务响应会先转换为统一模型，再进入推荐与渲染逻辑。推荐阈值和失败处理均有自动化测试覆盖。
+
+## 后续计划
+
+- 支持配置不同天气 API 服务及其凭据
+- 增加由天气服务提供的预警和空气质量数据
+- 增加更多定时发送与收件人分组能力
 
 ## 文档
 

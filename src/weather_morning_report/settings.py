@@ -11,6 +11,22 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
+class RecipientSettings:
+    name: str
+    email: str
+    location_name: str = ""
+    location_query: str = ""
+
+    def validate(self) -> None:
+        if not _is_email(self.email):
+            raise ValueError(f"Recipient email is invalid: {self.email}")
+        if bool(self.location_name) != bool(self.location_query):
+            raise ValueError(
+                "Recipient location name and query must both be set or both be empty"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class DeliverySettings:
     recipient_name: str = ""
     recipient_email: str = ""
@@ -21,6 +37,7 @@ class DeliverySettings:
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_security: str = "starttls"
+    recipients: tuple[RecipientSettings, ...] = ()
 
     def validate(self, *, require_complete: bool = False) -> None:
         if not 1 <= self.smtp_port <= 65535:
@@ -34,17 +51,23 @@ class DeliverySettings:
         ):
             if value and not _is_email(value):
                 raise ValueError(f"{label} is invalid")
+        for recipient in self.recipients:
+            recipient.validate()
+        recipient_emails = [recipient.email.lower() for recipient in self.recipients]
+        if len(recipient_emails) != len(set(recipient_emails)):
+            raise ValueError("Recipient emails must be unique")
         if require_complete:
             missing = [
                 label
                 for label, value in (
-                    ("recipient email", self.recipient_email),
                     ("administrator email", self.admin_email),
                     ("sender email", self.sender_email),
                     ("SMTP host", self.smtp_host),
                 )
                 if not value
             ]
+            if not self.recipients and not self.recipient_email:
+                missing.insert(0, "recipient email or recipients")
             if missing:
                 raise ValueError("Missing required settings: " + ", ".join(missing))
 
@@ -92,6 +115,13 @@ def load_delivery_settings(path: Path) -> DeliverySettings:
     for field_name, environment_name in environment.items():
         if environment_name in os.environ:
             values[field_name] = os.environ[environment_name]
+    if "RECIPIENTS_JSON" in os.environ:
+        recipients_json = os.environ["RECIPIENTS_JSON"].strip()
+        if recipients_json:
+            try:
+                values["recipients"] = json.loads(recipients_json)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"RECIPIENTS_JSON is invalid: {exc}") from exc
     return _from_mapping(values)
 
 
@@ -108,7 +138,22 @@ def load_recipient_name(path: Path) -> str:
         return ""
 
 
+def load_preview_recipient(path: Path) -> RecipientSettings | None:
+    try:
+        settings = load_delivery_settings(path)
+    except (OSError, TypeError, ValueError):
+        return None
+    if settings.recipients:
+        return settings.recipients[0]
+    if settings.recipient_email:
+        return RecipientSettings(settings.recipient_name, settings.recipient_email)
+    return None
+
+
 def _from_mapping(data: dict[str, Any]) -> DeliverySettings:
+    recipients_data = data.get("recipients", [])
+    if not isinstance(recipients_data, (list, tuple)):
+        raise ValueError("Recipients must be a list")
     settings = DeliverySettings(
         recipient_name=str(data.get("recipient_name", "")).strip(),
         recipient_email=str(data.get("recipient_email", "")).strip(),
@@ -119,9 +164,21 @@ def _from_mapping(data: dict[str, Any]) -> DeliverySettings:
         smtp_username=str(data.get("smtp_username", "")).strip(),
         smtp_password=str(data.get("smtp_password", "")),
         smtp_security=str(data.get("smtp_security", "starttls")).strip().lower(),
+        recipients=tuple(_recipient_from_mapping(item) for item in recipients_data),
     )
     settings.validate()
     return settings
+
+
+def _recipient_from_mapping(data: Any) -> RecipientSettings:
+    if not isinstance(data, dict):
+        raise ValueError("Each recipient must be an object")
+    return RecipientSettings(
+        name=str(data.get("name", "")).strip(),
+        email=str(data.get("email", "")).strip(),
+        location_name=str(data.get("location_name", "")).strip(),
+        location_query=str(data.get("location_query", "")).strip(),
+    )
 
 
 def _is_email(value: str) -> bool:

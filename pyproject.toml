@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "weather-morning-report"
-version = "0.1.0"
-description = "Action-oriented personal weather morning report"
+version = "0.2.0"
+description = "Action-oriented weather reports for one or many recipients"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -35,4 +35,3 @@ source = ["weather_morning_report"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-

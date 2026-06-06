@@ -4,8 +4,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from weather_morning_report import webui
-from weather_morning_report.settings import SettingsStore
-from weather_morning_report.webui import _settings_from_form, make_handler
+from weather_morning_report.settings import RecipientSettings, SettingsStore
+from weather_morning_report.webui import _parse_recipients, _settings_from_form, make_handler
 from test_settings import complete_settings
 
 
@@ -25,6 +25,16 @@ def test_form_keeps_existing_password_when_blank() -> None:
     settings = _settings_from_form(form, "existing-secret")
 
     assert settings.smtp_password == "existing-secret"
+
+
+def test_form_parses_recipient_locations() -> None:
+    assert _parse_recipients(
+        "Alice | alice@example.com | Shanghai | Shanghai\n"
+        "Bob | bob@example.com | Beijing | Beijing"
+    ) == (
+        RecipientSettings("Alice", "alice@example.com", "Shanghai", "Shanghai"),
+        RecipientSettings("Bob", "bob@example.com", "Beijing", "Beijing"),
+    )
 
 
 def test_local_web_ui_saves_settings(tmp_path) -> None:

@@ -2,14 +2,22 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Weather Morning Report generates and emails a concise, action-oriented personal
-weather briefing. It highlights whether to carry an umbrella, what to wear,
-whether sunscreen is needed, and which parts of the day have meaningful
-weather risks.
+Weather Morning Report is a self-hosted weather briefing and delivery service.
+It turns forecast data into concise, action-oriented advice: whether to carry
+an umbrella, what to wear, whether sunscreen is needed, and which parts of the
+day have meaningful weather risks.
 
-The application uses `wttr.in` with automatic `wttr.is` fallback, keeps a
-freshness-checked local snapshot cache, and sends responsive HTML plus
-plain-text email.
+It can send a private daily report to yourself, or deliver personalized reports
+to family members, teammates, subscribers, or anyone who needs them. Each
+recipient can have an independent name, email address, and weather location.
+Recipients in the same location share one weather fetch, while every person
+receives a separate personalized email without exposing the other recipients.
+
+The current provider is `wttr.in` with automatic `wttr.is` fallback. The
+provider-independent architecture is designed to support configurable weather
+APIs in a future release. The application also keeps freshness-checked,
+location-specific snapshot caches and sends responsive HTML plus plain-text
+email.
 
 ## Download
 
@@ -38,6 +46,8 @@ LOCATION_QUERY=Changning,Shanghai
 
 RECIPIENT_NAME=
 RECIPIENT_EMAIL=recipient@example.com
+# For multiple recipients, use one-line JSON and remove the legacy fields above:
+# RECIPIENTS_JSON=[{"name":"Alice","email":"alice@example.com","location_name":"Shanghai","location_query":"Shanghai"}]
 ADMIN_EMAIL=admin@example.com
 SENDER_EMAIL=sender@example.com
 SMTP_HOST=smtp.example.com
@@ -68,10 +78,11 @@ docker compose up settings
 Open <http://127.0.0.1:8766>, save the settings, test SMTP, then stop the
 container with `Ctrl+C`.
 
-The page is published only on the host loopback address. If using the settings
-page, remove the blank `RECIPIENT_*`, `ADMIN_EMAIL`, `SENDER_EMAIL`, and
-`SMTP_*` entries from `.env`; environment variables take priority over saved
-settings.
+The page is published only on the host loopback address. It supports multiple
+recipients and an independent location for each person. If using the settings
+page, remove the blank `RECIPIENT_*`, `RECIPIENTS_JSON`, `ADMIN_EMAIL`,
+`SENDER_EMAIL`, and `SMTP_*` entries from `.env`; environment variables take
+priority over saved settings.
 
 ## Schedule Docker Delivery
 
@@ -140,6 +151,9 @@ Runtime defaults and supported environment variables are documented in
 [`.env.example`](.env.example).
 
 - Environment variables override settings saved through the browser page.
+- `RECIPIENTS_JSON` configures multiple recipients and their locations.
+- Legacy `RECIPIENT_NAME` and `RECIPIENT_EMAIL` remain supported for one
+  recipient using the default `LOCATION_NAME` and `LOCATION_QUERY`.
 - Native settings are stored in `var/settings.json` with permission `600`.
 - Docker settings and snapshots are stored in the `weather-report-data` volume.
 - `.env`, runtime data, credentials, and generated files are excluded from Git.
@@ -164,6 +178,12 @@ src/weather_morning_report/
 Provider responses are normalized before recommendation and rendering logic
 runs. Recommendation thresholds and failure behavior are covered by automated
 tests.
+
+## Roadmap
+
+- Configurable weather API providers and credentials
+- Additional provider-backed weather warnings and air-quality data
+- More scheduling and recipient segmentation options
 
 ## Documentation
 
