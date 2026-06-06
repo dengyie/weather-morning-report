@@ -3,10 +3,11 @@ __pycache__/
 *.egg-info/
 .coverage
 .env
+.config/
+.local/
 .pytest_cache/
 .venv/
 build/
 dist/
 htmlcov/
 var/
-

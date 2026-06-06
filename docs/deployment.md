@@ -10,8 +10,10 @@ The deployment is independent from any existing weather scripts or cron jobs.
 Run as root:
 
 ```bash
-useradd --system --create-home --home-dir /opt/weather-morning-report \
+useradd --system --no-create-home --home-dir /opt/weather-morning-report \
   --shell /usr/sbin/nologin weather-report
+install -d -o weather-report -g weather-report -m 750 \
+  /opt/weather-morning-report
 ```
 
 Clone or copy the repository into `/opt/weather-morning-report`, then set
@@ -23,10 +25,34 @@ chown -R weather-report:weather-report /opt/weather-morning-report
 
 ## 2. Install the application
 
+When Python 3.12 is already installed:
+
 ```bash
 sudo -u weather-report python3.12 -m venv /opt/weather-morning-report/.venv
 sudo -u weather-report /opt/weather-morning-report/.venv/bin/pip install \
   /opt/weather-morning-report
+```
+
+On systems such as Ubuntu 22.04 without Python 3.12, install an isolated
+project runtime with `uv` instead of replacing the system Python:
+
+```bash
+sudo -u weather-report env HOME=/opt/weather-morning-report \
+  sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+sudo -u weather-report env HOME=/opt/weather-morning-report \
+  XDG_CONFIG_HOME=/opt/weather-morning-report/.config \
+  /opt/weather-morning-report/.local/bin/uv --no-config venv --python 3.12 \
+  /opt/weather-morning-report/.venv
+sudo -u weather-report env HOME=/opt/weather-morning-report \
+  XDG_CONFIG_HOME=/opt/weather-morning-report/.config \
+  /opt/weather-morning-report/.local/bin/uv --no-config pip install \
+  --python /opt/weather-morning-report/.venv/bin/python \
+  /opt/weather-morning-report
+```
+
+Create the runtime data directory:
+
+```bash
 install -d -o weather-report -g weather-report -m 700 \
   /opt/weather-morning-report/var
 ```
