@@ -9,15 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from weather_morning_report.models import (
-    AirQuality,
     CurrentConditions,
     DailyForecast,
     HourlyForecast,
     Location,
-    WarningSeverity,
     WeatherCondition,
     WeatherSnapshot,
-    WeatherWarning,
 )
 
 JsonObject = dict[str, Any]
@@ -68,8 +65,8 @@ def _snapshot_to_dict(snapshot: WeatherSnapshot) -> JsonObject:
         "schema_version": CACHE_SCHEMA_VERSION,
         "location": {
             "name": snapshot.location.name,
-            "latitude": snapshot.location.latitude,
-            "longitude": snapshot.location.longitude,
+            "latitude": None,
+            "longitude": None,
         },
         "source": snapshot.source,
         "fetched_at": snapshot.fetched_at.isoformat(),
@@ -106,8 +103,8 @@ def _snapshot_to_dict(snapshot: WeatherSnapshot) -> JsonObject:
             }
             for point in snapshot.hourly
         ],
-        "air_quality": _air_quality_to_dict(snapshot.air_quality),
-        "warnings": [_warning_to_dict(warning) for warning in snapshot.warnings],
+        "air_quality": None,
+        "warnings": [],
     }
 
 
@@ -118,7 +115,7 @@ def _snapshot_from_dict(data: JsonObject) -> WeatherSnapshot:
     current = data["current"]
     daily = data["daily"]
     return WeatherSnapshot(
-        location=Location(**location),
+        location=Location(name=location["name"]),
         source=data["source"],
         fetched_at=datetime.fromisoformat(data["fetched_at"]),
         current=CurrentConditions(
@@ -139,8 +136,6 @@ def _snapshot_from_dict(data: JsonObject) -> WeatherSnapshot:
             uv_index=daily["uv_index"],
         ),
         hourly=tuple(_hourly_from_dict(point) for point in data["hourly"]),
-        air_quality=_air_quality_from_dict(data["air_quality"]),
-        warnings=tuple(_warning_from_dict(warning) for warning in data["warnings"]),
     )
 
 
@@ -158,46 +153,3 @@ def _hourly_from_dict(data: JsonObject) -> HourlyForecast:
         wind_speed_kph=data["wind_speed_kph"],
         uv_index=data["uv_index"],
     )
-
-
-def _air_quality_to_dict(air_quality: AirQuality | None) -> JsonObject | None:
-    if air_quality is None:
-        return None
-    return {
-        "observed_at": air_quality.observed_at.isoformat(),
-        "aqi": air_quality.aqi,
-        "category": air_quality.category,
-        "primary_pollutant": air_quality.primary_pollutant,
-    }
-
-
-def _air_quality_from_dict(data: JsonObject | None) -> AirQuality | None:
-    if data is None:
-        return None
-    return AirQuality(
-        observed_at=datetime.fromisoformat(data["observed_at"]),
-        aqi=data["aqi"],
-        category=data["category"],
-        primary_pollutant=data["primary_pollutant"],
-    )
-
-
-def _warning_to_dict(warning: WeatherWarning) -> JsonObject:
-    return {
-        "title": warning.title,
-        "severity": warning.severity.value,
-        "starts_at": warning.starts_at.isoformat(),
-        "ends_at": warning.ends_at.isoformat() if warning.ends_at else None,
-        "description": warning.description,
-    }
-
-
-def _warning_from_dict(data: JsonObject) -> WeatherWarning:
-    return WeatherWarning(
-        title=data["title"],
-        severity=WarningSeverity(data["severity"]),
-        starts_at=datetime.fromisoformat(data["starts_at"]),
-        ends_at=datetime.fromisoformat(data["ends_at"]) if data["ends_at"] else None,
-        description=data["description"],
-    )
-

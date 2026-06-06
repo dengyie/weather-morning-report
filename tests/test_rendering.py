@@ -37,3 +37,31 @@ def test_html_report_contains_email_safe_content() -> None:
     assert "<script" not in html
     assert "http://" not in html
     assert "https://" not in html
+
+
+def test_reports_use_configured_recipient_name() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    advice = recommend(snapshot)
+
+    assert "小明，早上好。" in render_text(snapshot, advice, recipient_name=" 小明 ")
+    assert "小明，早上好。" in render_html(snapshot, advice, recipient_name=" 小明 ")
+
+
+def test_reports_use_default_greeting_without_recipient_name() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    advice = recommend(snapshot)
+
+    assert "\n早上好。\n" in render_text(snapshot, advice)
+    assert "<p>早上好。</p>" in render_html(snapshot, advice)

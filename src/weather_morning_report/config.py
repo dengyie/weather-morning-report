@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +36,12 @@ class Config:
             raise ValueError("LOCATION_QUERY must not be empty")
         if cache_max_age_hours <= 0:
             raise ValueError("CACHE_MAX_AGE_HOURS must be greater than zero")
+        try:
+            timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"TIMEZONE is invalid: {timezone_name}") from exc
         return cls(
-            timezone=ZoneInfo(timezone_name),
+            timezone=timezone,
             location_name=location_name,
             location_query=location_query,
             cache_path=cache_path,

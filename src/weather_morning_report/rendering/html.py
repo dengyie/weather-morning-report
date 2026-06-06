@@ -13,6 +13,7 @@ def render_html(
     advice: ReportAdvice,
     *,
     cached: bool = False,
+    recipient_name: str = "",
 ) -> str:
     period_rows = "".join(
         f"""
@@ -30,6 +31,11 @@ def render_html(
         </div>"""
         if cached
         else ""
+    )
+    greeting = (
+        f"{escape(recipient_name.strip())}，早上好。"
+        if recipient_name.strip()
+        else "早上好。"
     )
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -68,7 +74,7 @@ def render_html(
       {cache_notice}
       <p class="muted">天气早报</p>
       <h1>{escape(advice.focus)}</h1>
-      <p>早上好。</p>
+      <p>{greeting}</p>
 
       <div class="focus">
         <table class="summary" role="presentation">
@@ -103,4 +109,3 @@ def render_html(
 </body>
 </html>
 """
-

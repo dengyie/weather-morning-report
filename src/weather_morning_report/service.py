@@ -16,7 +16,11 @@ from weather_morning_report.providers.wttr import WttrProvider
 from weather_morning_report.recommendations import recommend
 from weather_morning_report.rendering.html import render_html
 from weather_morning_report.rendering.text import render_text
-from weather_morning_report.settings import DeliverySettings, load_delivery_settings
+from weather_morning_report.settings import (
+    DeliverySettings,
+    load_delivery_settings,
+    load_recipient_name,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +60,7 @@ def validate_configuration(config: Config) -> str:
 
 
 def preview(config: Config, *, output_format: str = "text") -> str:
+    recipient_name = load_recipient_name(config.settings_path)
     provider = WttrProvider(
         location_name=config.location_name,
         location_query=config.location_query,
@@ -66,9 +71,19 @@ def preview(config: Config, *, output_format: str = "text") -> str:
     result = load_snapshot(provider, cache, now)
     advice = recommend(result.snapshot, report_date=now.date())
     if output_format == "html":
-        return render_html(result.snapshot, advice, cached=result.cached)
+        return render_html(
+            result.snapshot,
+            advice,
+            cached=result.cached,
+            recipient_name=recipient_name,
+        )
     if output_format == "text":
-        return render_text(result.snapshot, advice, cached=result.cached)
+        return render_text(
+            result.snapshot,
+            advice,
+            cached=result.cached,
+            recipient_name=recipient_name,
+        )
     raise ValueError(f"unsupported output format: {output_format}")
 
 
@@ -91,8 +106,18 @@ def send_report(config: Config) -> str:
     message = build_report_message(
         settings,
         subject=advice.subject,
-        text=render_text(result.snapshot, advice, cached=result.cached),
-        html=render_html(result.snapshot, advice, cached=result.cached),
+        text=render_text(
+            result.snapshot,
+            advice,
+            cached=result.cached,
+            recipient_name=settings.recipient_name,
+        ),
+        html=render_html(
+            result.snapshot,
+            advice,
+            cached=result.cached,
+            recipient_name=settings.recipient_name,
+        ),
     )
     send_message(settings, message)
     return f"Weather report sent to {settings.recipient_email}."

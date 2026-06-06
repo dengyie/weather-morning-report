@@ -89,6 +89,62 @@ def test_validate_configuration_checks_delivery_and_weather(tmp_path, monkeypatc
     assert result == "Configuration is valid; weather provider reachable via fixture."
 
 
+def test_preview_uses_configured_recipient_name(tmp_path, monkeypatch) -> None:
+    snapshot = weather_snapshot()
+    monkeypatch.setattr(service, "load_recipient_name", lambda path: "Demo")
+    monkeypatch.setattr(
+        service,
+        "load_snapshot",
+        lambda provider, cache, now: service.SnapshotResult(snapshot, cached=False),
+    )
+    monkeypatch.setattr(
+        service,
+        "render_text",
+        lambda snapshot, advice, **options: options["recipient_name"],
+    )
+
+    assert service.preview(config(tmp_path)) == "Demo"
+
+
+def test_preview_does_not_load_delivery_settings(tmp_path, monkeypatch) -> None:
+    snapshot = weather_snapshot()
+    monkeypatch.setenv("SMTP_PORT", "invalid")
+    monkeypatch.setattr(
+        service,
+        "load_delivery_settings",
+        lambda path: (_ for _ in ()).throw(AssertionError("delivery settings loaded")),
+    )
+    monkeypatch.setattr(
+        service,
+        "load_snapshot",
+        lambda provider, cache, now: service.SnapshotResult(snapshot, cached=False),
+    )
+
+    assert "早上好。" in service.preview(config(tmp_path))
+
+
+def test_preview_ignores_malformed_settings_file(tmp_path, monkeypatch) -> None:
+    snapshot = weather_snapshot()
+    config_value = config(tmp_path)
+    config_value.settings_path.write_text("not-json", encoding="utf-8")
+    monkeypatch.setattr(
+        service,
+        "load_snapshot",
+        lambda provider, cache, now: service.SnapshotResult(snapshot, cached=False),
+    )
+
+    assert "早上好。" in service.preview(config_value)
+
+
+def test_strict_commands_reject_invalid_delivery_settings(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SMTP_PORT", "invalid")
+
+    with pytest.raises(ValueError, match="invalid literal"):
+        service.send_report(config(tmp_path))
+    with pytest.raises(ValueError, match="invalid literal"):
+        service.validate_configuration(config(tmp_path))
+
+
 def config(tmp_path) -> Config:
     return Config(
         timezone=SHANGHAI,
@@ -116,6 +172,7 @@ def test_send_report_sends_multipart_to_recipient(tmp_path, monkeypatch) -> None
     assert result == "Weather report sent to recipient@example.com."
     assert sent[0]["To"] == "recipient@example.com"
     assert sent[0].is_multipart()
+    assert "Demo，早上好。" in sent[0].get_body(preferencelist=("plain",)).get_content()
 
 
 def test_send_report_notifies_only_admin_when_weather_unavailable(

@@ -1,20 +1,25 @@
 # Weather Morning Report
 
-Standalone Python project for generating an action-oriented personal weather
-morning report.
+Standalone Python application that generates and emails an action-oriented
+personal weather morning report.
 
-The project is under active development. The initial Python package,
-provider-independent weather model, and pytest framework are in place.
+The report prioritizes practical decisions:
 
-- [Design specification](docs/DESIGN.md)
-- [Planning transcript](docs/CHAT_TRANSCRIPT.md)
+- Whether to carry an umbrella
+- What to wear
+- Whether sunscreen is needed
+- Which parts of the day have meaningful weather risks
 
-The existing VPS weather scripts and cron jobs are outside this project and
-must remain unchanged until a separate deployment decision is approved.
+It uses `wttr.in` with automatic `wttr.is` fallback, a local snapshot cache,
+responsive HTML and plain-text email, and a systemd timer for daily delivery.
 
-## Development Setup
+## Requirements
 
-Python 3.12 or newer is required.
+- Python 3.12 or newer
+- Network access to `wttr.in` or `wttr.is`
+- SMTP credentials for email delivery
+
+## Setup
 
 ```bash
 python3 -m venv .venv
@@ -22,116 +27,86 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-Run the CLI help:
+Configuration defaults and environment variables are documented in
+`.env.example`. Delivery settings may also be stored through the local settings
+UI:
 
 ```bash
-.venv/bin/weather-report --help
+.venv/bin/weather-report settings
 ```
 
-Generate a live terminal preview using `wttr.in` with automatic `wttr.is`
-fallback:
+The UI listens only on `127.0.0.1:8766`. It stores settings in
+`var/settings.json` with file permission `600`; saved passwords are never
+displayed. Environment variables override stored settings.
+
+## Commands
 
 ```bash
-.venv/bin/weather-report validate-config
 .venv/bin/weather-report preview
 .venv/bin/weather-report preview --format html > report.html
-.venv/bin/weather-report settings
+.venv/bin/weather-report validate-config
 .venv/bin/weather-report send
+.venv/bin/weather-report settings
 ```
 
-Configuration can be customized with environment variables documented in
-`.env.example`.
+- `preview` fetches live weather, applies cache fallback when necessary, and
+  renders a report without sending email. Missing or invalid delivery settings
+  do not block preview generation.
+- `validate-config` verifies complete delivery settings and weather-provider
+  connectivity.
+- `send` generates and sends a multipart HTML and plain-text report.
+- `settings` opens the local delivery settings UI.
 
-`weather-report validate-config` verifies complete delivery settings and
-fetches a live weather snapshot without sending email.
+When `RECIPIENT_NAME` or a stored recipient name is configured, the report uses
+it in the greeting. Otherwise, or when delivery settings are invalid, preview
+uses a generic greeting. `send` and `validate-config` continue to require valid
+delivery settings.
 
-`weather-report settings` opens a local-only Web UI at `127.0.0.1:8766` for
-recipient, administrator, and SMTP settings. Settings are stored in
-`var/settings.json` with file permission `600`; this directory is excluded
-from version control. Existing SMTP passwords are never displayed by the UI.
+## Reliability
 
-Example preview:
+The application queries `wttr.in`, then `wttr.is`. Successful normalized
+snapshots are saved atomically to `var/weather_snapshot.json`.
 
-```text
-主题：[紫外线很强，注意防晒] 天气早报
+If both providers fail:
 
-今日重点：午间紫外线较强
-带伞：午间可能有雨，可随手带伞
-防晒：UV 10，强烈建议防晒、遮阳，长时间户外注意补涂
+- A cached snapshot no older than `CACHE_MAX_AGE_HOURS` is used and clearly
+  labeled.
+- If no usable cache exists, no recipient report is sent and the administrator
+  receives a failure notification.
 
-穿搭：短袖或薄衬衫即可；避免容易吸水的鞋
-```
-
-## Current Structure
+## Project Structure
 
 ```text
 src/weather_morning_report/
-├── providers/
-├── recommendations/
-├── rendering/
+├── delivery/          # Email construction and SMTP delivery
+├── providers/         # Weather provider contracts and wttr implementation
+├── recommendations/   # Period selection and action recommendations
+├── rendering/         # HTML and plain-text reports
+├── cache.py
 ├── cli.py
 ├── config.py
 ├── models.py
-└── service.py
+├── service.py
+├── settings.py
+└── webui.py
 tests/
-├── test_cli.py
-├── test_models.py
-├── test_recommendations.py
-└── test_wttr_provider.py
+deploy/systemd/
+docs/
 ```
 
-`models.py` defines the normalized weather data consumed by future
-recommendation and rendering modules. Provider implementations must convert
-their raw responses into these models before recommendation logic runs.
-
-The normalized model currently covers:
-
-- Location and provider metadata
-- Current conditions
-- Hourly and daily forecasts
-- Optional air quality
-- Optional official warnings
-- Time-range selection for relevant forecast periods
-
-Models reject naive datetimes, invalid percentages and ranges, unsorted hourly
-forecasts, duplicate forecast timestamps, and inconsistent daily temperature
-ranges.
-
-## Demo Scope
-
-The current demo implements:
-
-- Environment-backed local configuration
-- Live `wttr.in` requests with `wttr.is` fallback
-- Provider response normalization
-- Atomic JSON snapshot cache with a configurable 12-hour freshness limit
-- Automatic cache fallback when both live providers fail
-- Commute-aware umbrella guidance
-- UV and sunscreen guidance
-- Summer-oriented clothing guidance
-- Dynamic subject and three key time periods
-- Automatic weekday commute and weekend outing period selection
-- Plain-text terminal preview
-- Responsive, email-friendly HTML preview without remote assets or JavaScript
-- Local-only Web UI for recipient, administrator, and SMTP configuration
-- SMTP connection and authentication test from the settings UI
-- Test-email delivery to the administrator from the settings UI
-- Multipart HTML and plain-text delivery with `weather-report send`
-- Administrator-only failure notification when weather and cache are unavailable
-- Risk-first handling for thunder probability, heavy rain, strong wind, and
-  dangerous heat
-
-When all live weather providers fail, a cached snapshot no older than the
-configured limit is used and clearly labeled. If no usable cache exists, the
-recipient receives nothing and only the administrator is notified.
-
-The default cache path is `var/weather_snapshot.json`. It is excluded from
-version control and can be changed with `CACHE_PATH`. Cached data older than
-`CACHE_MAX_AGE_HOURS` is rejected rather than used to generate advice.
+Provider responses are normalized before recommendation and rendering logic
+runs. Recommendation thresholds are covered by automated tests.
 
 ## Deployment
 
 The included systemd timer runs `weather-report send` every day at 08:30
-`Asia/Shanghai`, independently of the VPS host timezone. See
-[docs/deployment.md](docs/deployment.md) for installation, validation, logging,
-and rollback instructions.
+`Asia/Shanghai`, independently of the VPS host timezone.
+
+See [docs/deployment.md](docs/deployment.md) for installation, validation,
+logging, and Git-based rollback instructions. The deployment is independent
+from any existing weather scripts or cron jobs.
+
+## Design
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the current product behavior,
+architecture, and operational constraints.

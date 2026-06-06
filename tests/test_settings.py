@@ -1,4 +1,5 @@
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -6,6 +7,7 @@ from weather_morning_report.settings import (
     DeliverySettings,
     SettingsStore,
     load_delivery_settings,
+    load_recipient_name,
 )
 
 
@@ -60,3 +62,29 @@ def test_settings_reject_invalid_email() -> None:
     with pytest.raises(ValueError, match="Recipient email is invalid"):
         complete_settings(recipient_email="not-an-email").validate()
 
+
+def test_recipient_name_environment_overrides_stored_name(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "settings.json"
+    SettingsStore(path).save(complete_settings(recipient_name="Stored"))
+    monkeypatch.setenv("RECIPIENT_NAME", " Environment ")
+
+    assert load_recipient_name(path) == "Environment"
+
+
+@pytest.mark.parametrize("contents", ["not-json", "[]", '{"recipient_name": []}'])
+def test_recipient_name_ignores_invalid_settings(tmp_path, contents) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(contents, encoding="utf-8")
+
+    assert load_recipient_name(path) == ""
+
+
+def test_recipient_name_ignores_unreadable_settings(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "settings.json"
+    monkeypatch.setattr(
+        Path,
+        "read_text",
+        lambda self, **kwargs: (_ for _ in ()).throw(OSError()),
+    )
+
+    assert load_recipient_name(path) == ""

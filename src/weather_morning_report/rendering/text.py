@@ -9,6 +9,7 @@ def render_text(
     advice: ReportAdvice,
     *,
     cached: bool = False,
+    recipient_name: str = "",
 ) -> str:
     period_lines = "\n".join(
         f"{period.label}：{period.summary}" for period in advice.periods
@@ -18,9 +19,10 @@ def render_text(
         if cached
         else ""
     )
+    greeting = f"{recipient_name.strip()}，早上好。" if recipient_name.strip() else "早上好。"
     return f"""主题：{advice.subject}
 
-{cache_notice}早上好。
+{cache_notice}{greeting}
 
 今日重点：{advice.focus}
 带伞：{advice.umbrella}

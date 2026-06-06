@@ -95,6 +95,19 @@ def load_delivery_settings(path: Path) -> DeliverySettings:
     return _from_mapping(values)
 
 
+def load_recipient_name(path: Path) -> str:
+    if "RECIPIENT_NAME" in os.environ:
+        return os.environ["RECIPIENT_NAME"].strip()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return ""
+        recipient_name = data.get("recipient_name", "")
+        return recipient_name.strip() if isinstance(recipient_name, str) else ""
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return ""
+
+
 def _from_mapping(data: dict[str, Any]) -> DeliverySettings:
     settings = DeliverySettings(
         recipient_name=str(data.get("recipient_name", "")).strip(),
@@ -115,4 +128,3 @@ def _is_email(value: str) -> bool:
     _, address = parseaddr(value)
     local, separator, domain = address.rpartition("@")
     return bool(separator and local and "." in domain and not domain.startswith("."))
-

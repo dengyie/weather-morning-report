@@ -26,3 +26,10 @@ def test_validate_config_succeeds(capsys, monkeypatch) -> None:
         capsys.readouterr().out
         == "Configuration is valid; weather provider reachable via fixture.\n"
     )
+
+
+def test_invalid_timezone_returns_cli_error(capsys, monkeypatch) -> None:
+    monkeypatch.setenv("TIMEZONE", "Invalid/Timezone")
+
+    assert main(["preview"]) == 1
+    assert capsys.readouterr().out == "Error: TIMEZONE is invalid: Invalid/Timezone\n"

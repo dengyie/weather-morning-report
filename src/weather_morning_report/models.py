@@ -38,24 +38,13 @@ class WeatherCondition(StrEnum):
     UNKNOWN = "unknown"
 
 
-class WarningSeverity(StrEnum):
-    MINOR = "minor"
-    MODERATE = "moderate"
-    SEVERE = "severe"
-    EXTREME = "extreme"
-
-
 @dataclass(frozen=True, slots=True)
 class Location:
     name: str
-    latitude: float | None = None
-    longitude: float | None = None
 
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("location name must not be empty")
-        _require_range(self.latitude, -90, 90, "latitude")
-        _require_range(self.longitude, -180, 180, "longitude")
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,38 +116,6 @@ class DailyForecast:
 
 
 @dataclass(frozen=True, slots=True)
-class AirQuality:
-    observed_at: datetime
-    aqi: int
-    category: str
-    primary_pollutant: str | None = None
-
-    def __post_init__(self) -> None:
-        _require_aware(self.observed_at, "observed_at")
-        _require_range(self.aqi, 0, 500, "aqi")
-        if not self.category.strip():
-            raise ValueError("air quality category must not be empty")
-
-
-@dataclass(frozen=True, slots=True)
-class WeatherWarning:
-    title: str
-    severity: WarningSeverity
-    starts_at: datetime
-    ends_at: datetime | None = None
-    description: str | None = None
-
-    def __post_init__(self) -> None:
-        if not self.title.strip():
-            raise ValueError("warning title must not be empty")
-        _require_aware(self.starts_at, "starts_at")
-        if self.ends_at is not None:
-            _require_aware(self.ends_at, "ends_at")
-            if self.ends_at < self.starts_at:
-                raise ValueError("warning ends_at must not precede starts_at")
-
-
-@dataclass(frozen=True, slots=True)
 class WeatherSnapshot:
     """A validated, normalized snapshot from one weather provider."""
 
@@ -168,8 +125,6 @@ class WeatherSnapshot:
     current: CurrentConditions
     daily: DailyForecast
     hourly: tuple[HourlyForecast, ...] = field(default_factory=tuple)
-    air_quality: AirQuality | None = None
-    warnings: tuple[WeatherWarning, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -183,13 +138,4 @@ class WeatherSnapshot:
             raise ValueError("hourly forecasts must be ordered by forecast_at")
         if len(forecast_times) != len(set(forecast_times)):
             raise ValueError("hourly forecasts must not contain duplicate times")
-
-    def hours_between(self, start: datetime, end: datetime) -> tuple[HourlyForecast, ...]:
-        """Return forecast points in the half-open interval [start, end)."""
-
-        _require_aware(start, "start")
-        _require_aware(end, "end")
-        if end <= start:
-            raise ValueError("end must be later than start")
-        return tuple(point for point in self.hourly if start <= point.forecast_at < end)
 

@@ -4,15 +4,12 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from weather_morning_report.models import (
-    AirQuality,
     CurrentConditions,
     DailyForecast,
     HourlyForecast,
     Location,
-    WarningSeverity,
     WeatherCondition,
     WeatherSnapshot,
-    WeatherWarning,
 )
 
 
@@ -41,7 +38,7 @@ def hourly(hour: int) -> HourlyForecast:
 
 def snapshot(*points: HourlyForecast) -> WeatherSnapshot:
     return WeatherSnapshot(
-        location=Location("Changning District, Shanghai", 31.22, 121.42),
+        location=Location("Changning District, Shanghai"),
         source="wttr.in",
         fetched_at=at(8) + timedelta(minutes=30),
         current=CurrentConditions(
@@ -112,41 +109,6 @@ def test_daily_forecast_rejects_inverted_temperature_range() -> None:
             forecast_date=date(2026, 6, 6),
             minimum_temperature_c=32,
             maximum_temperature_c=25,
-        )
-
-
-def test_hours_between_returns_only_relevant_points() -> None:
-    report = snapshot(hourly(7), hourly(9), hourly(10), hourly(18))
-
-    result = report.hours_between(at(7), at(10))
-
-    assert [point.forecast_at.hour for point in result] == [7, 9]
-
-
-def test_hours_between_rejects_invalid_range() -> None:
-    report = snapshot(hourly(9))
-
-    with pytest.raises(ValueError, match="end must be later"):
-        report.hours_between(at(10), at(9))
-
-
-def test_location_rejects_invalid_coordinates() -> None:
-    with pytest.raises(ValueError, match="latitude"):
-        Location("Invalid", latitude=91, longitude=121)
-
-
-def test_air_quality_rejects_empty_category() -> None:
-    with pytest.raises(ValueError, match="category"):
-        AirQuality(observed_at=at(8), aqi=50, category=" ")
-
-
-def test_warning_rejects_end_before_start() -> None:
-    with pytest.raises(ValueError, match="must not precede"):
-        WeatherWarning(
-            title="Thunderstorm warning",
-            severity=WarningSeverity.SEVERE,
-            starts_at=at(18),
-            ends_at=at(17),
         )
 
 

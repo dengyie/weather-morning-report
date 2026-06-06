@@ -147,3 +147,37 @@ Disable only this project's schedule:
 ```bash
 systemctl disable --now weather-morning-report.timer
 ```
+
+## 7. Rollback
+
+Before updating, record the currently deployed commit:
+
+```bash
+sudo -u weather-report git -C /opt/weather-morning-report rev-parse HEAD
+```
+
+To roll back to a known-good commit, stop the timer, switch the working tree,
+and reinstall the application:
+
+```bash
+systemctl stop weather-morning-report.timer
+sudo -u weather-report git -C /opt/weather-morning-report \
+  switch --detach <known-good-commit>
+sudo -u weather-report /opt/weather-morning-report/.venv/bin/pip install \
+  /opt/weather-morning-report
+```
+
+Verify weather preview before restoring scheduled delivery:
+
+```bash
+sudo -u weather-report bash -c 'cd /opt/weather-morning-report && \
+  .venv/bin/weather-report preview'
+systemctl start weather-morning-report.service
+journalctl -u weather-morning-report.service -n 100 --no-pager
+systemctl start weather-morning-report.timer
+systemctl status weather-morning-report.timer
+```
+
+Schema v1 weather snapshots written by the newer application remain readable by
+the previous version. Delivery settings and runtime snapshots under `var/` are
+not changed by the Git rollback.

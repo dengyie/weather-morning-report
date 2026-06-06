@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+from collections.abc import Iterator
+from contextlib import contextmanager
 from email.message import EmailMessage
 
 from weather_morning_report.settings import DeliverySettings
@@ -17,24 +19,7 @@ def send_message(
     settings.validate()
     if not settings.smtp_host:
         raise ValueError("SMTP host is required")
-    context = ssl.create_default_context()
-    if settings.smtp_security == "ssl":
-        client: smtplib.SMTP = smtplib.SMTP_SSL(
-            settings.smtp_host,
-            settings.smtp_port,
-            timeout=timeout,
-            context=context,
-        )
-    else:
-        client = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout)
-
-    with client:
-        client.ehlo()
-        if settings.smtp_security == "starttls":
-            client.starttls(context=context)
-            client.ehlo()
-        if settings.smtp_username:
-            client.login(settings.smtp_username, settings.smtp_password)
+    with _smtp_client(settings, timeout) as client:
         client.send_message(message)
 
 
@@ -42,6 +27,16 @@ def test_smtp_connection(settings: DeliverySettings, timeout: float = 10) -> str
     settings.validate()
     if not settings.smtp_host:
         raise ValueError("SMTP host is required")
+    with _smtp_client(settings, timeout):
+        pass
+    return "SMTP connection and authentication succeeded."
+
+
+@contextmanager
+def _smtp_client(
+    settings: DeliverySettings,
+    timeout: float,
+) -> Iterator[smtplib.SMTP]:
     context = ssl.create_default_context()
     if settings.smtp_security == "ssl":
         client: smtplib.SMTP = smtplib.SMTP_SSL(
@@ -59,7 +54,7 @@ def test_smtp_connection(settings: DeliverySettings, timeout: float = 10) -> str
             client.ehlo()
         if settings.smtp_username:
             client.login(settings.smtp_username, settings.smtp_password)
-    return "SMTP connection and authentication succeeded."
+        yield client
 
 
 def send_test_email(settings: DeliverySettings) -> str:
