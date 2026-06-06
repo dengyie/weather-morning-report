@@ -115,7 +115,9 @@ delivery settings.
   runtime snapshots are committed.
 - Local settings and cache files live under ignored `var/`.
 - Stored settings use file permission `600`.
-- The settings UI listens only on `127.0.0.1` and uses a per-process CSRF token.
+- The settings UI defaults to `127.0.0.1` and uses a per-process CSRF token.
+  Docker listens inside the container on `0.0.0.0`, while Compose publishes it
+  only on the host loopback address.
 - Email is multipart HTML and plain text with no JavaScript, remote assets, or
   tracking pixels.
 - The systemd service writes only to the runtime `var/` directory.

@@ -15,14 +15,21 @@ from weather_morning_report.delivery.smtp import send_test_email, test_smtp_conn
 from weather_morning_report.settings import DeliverySettings, SettingsStore
 
 
-def serve_settings(path: Path, port: int = 8766, *, open_browser: bool = True) -> None:
+def serve_settings(
+    path: Path,
+    port: int = 8766,
+    *,
+    host: str = "127.0.0.1",
+    open_browser: bool = True,
+) -> None:
     store = SettingsStore(path)
     token = secrets.token_urlsafe(24)
     server = ThreadingHTTPServer(
-        ("127.0.0.1", port),
+        (host, port),
         make_handler(store, token),
     )
-    url = f"http://127.0.0.1:{server.server_port}/"
+    display_host = "127.0.0.1" if host == "0.0.0.0" else host
+    url = f"http://{display_host}:{server.server_port}/"
     print(f"Settings UI: {url}")
     print("Press Ctrl+C to stop.")
     if open_browser:

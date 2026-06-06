@@ -1,0 +1,22 @@
+services:
+  report:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - weather-report-data:/app/var
+
+  settings:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    command: ["settings", "--host", "0.0.0.0", "--no-browser"]
+    ports:
+      - "127.0.0.1:8766:8766"
+    volumes:
+      - weather-report-data:/app/var
+
+volumes:
+  weather-report-data:

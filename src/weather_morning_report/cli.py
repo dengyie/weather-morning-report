@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         "settings",
         help="Open the local delivery settings UI",
     )
+    settings_parser.add_argument("--host", default="127.0.0.1")
     settings_parser.add_argument("--port", type=int, default=8766)
     settings_parser.add_argument("--no-browser", action="store_true")
     return parser
@@ -49,6 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "settings":
             serve_settings(
                 config.settings_path,
+                host=args.host,
                 port=args.port,
                 open_browser=not args.no_browser,
             )
