@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from weather_morning_report.config import Config
 from weather_morning_report.providers.base import ProviderError
 from weather_morning_report.service import preview
+from weather_morning_report.webui import serve_settings
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("send", help="Send the report (not implemented yet)")
     subparsers.add_parser("validate-config", help="Validate local configuration")
+    settings_parser = subparsers.add_parser(
+        "settings",
+        help="Open the local delivery settings UI",
+    )
+    settings_parser.add_argument("--port", type=int, default=8766)
+    settings_parser.add_argument("--no-browser", action="store_true")
     return parser
 
 
@@ -37,6 +44,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "preview":
             print(preview(config, output_format=args.format), end="")
+            return 0
+        if args.command == "settings":
+            serve_settings(
+                config.settings_path,
+                port=args.port,
+                open_browser=not args.no_browser,
+            )
             return 0
         raise SystemExit("'send' is not implemented yet")
     except (ProviderError, ValueError) as exc:

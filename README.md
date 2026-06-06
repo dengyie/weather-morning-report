@@ -35,10 +35,16 @@ fallback:
 .venv/bin/weather-report validate-config
 .venv/bin/weather-report preview
 .venv/bin/weather-report preview --format html > report.html
+.venv/bin/weather-report settings
 ```
 
 Configuration can be customized with environment variables documented in
 `.env.example`. The `send` command is reserved but is not implemented yet.
+
+`weather-report settings` opens a local-only Web UI at `127.0.0.1:8766` for
+recipient, administrator, and SMTP settings. Settings are stored in
+`var/settings.json` with file permission `600`; this directory is excluded
+from version control. Existing SMTP passwords are never displayed by the UI.
 
 Example preview:
 
@@ -102,8 +108,11 @@ The current demo implements:
 - Dynamic subject and three key time periods
 - Plain-text terminal preview
 - Responsive, email-friendly HTML preview without remote assets or JavaScript
+- Local-only Web UI for recipient, administrator, and SMTP configuration
+- SMTP connection and authentication test from the settings UI
 
-SMTP delivery and the `send` command remain for later Phase 1 work.
+Actual SMTP report delivery and the `send` command remain for later Phase 1
+work.
 
 The default cache path is `var/weather_snapshot.json`. It is excluded from
 version control and can be changed with `CACHE_PATH`. Cached data older than

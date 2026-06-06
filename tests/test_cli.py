@@ -2,7 +2,7 @@ from weather_morning_report.cli import build_parser, main
 
 
 def test_parser_accepts_documented_commands() -> None:
-    for command in ("preview", "send", "validate-config"):
+    for command in ("preview", "send", "validate-config", "settings"):
         assert build_parser().parse_args([command]).command == command
 
 

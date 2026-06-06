@@ -16,6 +16,7 @@ class Config:
     location_query: str
     cache_path: Path
     cache_max_age: timedelta
+    settings_path: Path
 
     @classmethod
     def from_env(cls) -> Config:
@@ -26,6 +27,7 @@ class Config:
         ).strip()
         location_query = os.getenv("LOCATION_QUERY", "Changning,Shanghai").strip()
         cache_path = Path(os.getenv("CACHE_PATH", "var/weather_snapshot.json"))
+        settings_path = Path(os.getenv("SETTINGS_PATH", "var/settings.json"))
         cache_max_age_hours = float(os.getenv("CACHE_MAX_AGE_HOURS", "12"))
         if not location_name:
             raise ValueError("LOCATION_NAME must not be empty")
@@ -39,4 +41,5 @@ class Config:
             location_query=location_query,
             cache_path=cache_path,
             cache_max_age=timedelta(hours=cache_max_age_hours),
+            settings_path=settings_path,
         )
