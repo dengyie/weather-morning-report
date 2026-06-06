@@ -19,12 +19,34 @@ APIs in a future release. The application also keeps freshness-checked,
 location-specific snapshot caches and sends responsive HTML plus plain-text
 email.
 
-## Download
+## Download and Install
+
+Download the latest wheel or source archive from
+[GitHub Releases](https://github.com/dengyie/weather-morning-report/releases/latest).
+Install a downloaded wheel with Python 3.12 or newer:
+
+```bash
+python3.12 -m pip install ./weather_morning_report-*.whl
+weather-report --help
+```
+
+You can also install a tagged release directly from GitHub:
+
+```bash
+python3.12 -m pip install \
+  git+https://github.com/dengyie/weather-morning-report.git@v0.2.0
+```
+
+To develop or deploy with Docker, clone the repository:
 
 ```bash
 git clone https://github.com/dengyie/weather-morning-report.git
 cd weather-morning-report
 ```
+
+This is a Python application, so it is not distributed through npm. Publishing
+the same package to PyPI is planned; GitHub Release wheels provide the standard
+Python installation experience today.
 
 ## Quick Start With Docker
 

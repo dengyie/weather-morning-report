@@ -8,12 +8,31 @@
 
 当前天气数据来自 `wttr.in`，失败时会自动回退至 `wttr.is`。项目使用与天气服务无关的 Provider 架构，后续可以继续增加可配置的天气 API 与凭据。应用还会为不同地区保存带时效校验的独立天气缓存，并发送响应式 HTML 与纯文本邮件。
 
-## 下载
+## 下载与安装
+
+可以从 [GitHub Releases](https://github.com/dengyie/weather-morning-report/releases/latest)
+下载最新的 wheel 安装包或源码压缩包。使用 Python 3.12 或更高版本安装下载的 wheel：
+
+```bash
+python3.12 -m pip install ./weather_morning_report-*.whl
+weather-report --help
+```
+
+也可以直接从 GitHub 安装指定版本：
+
+```bash
+python3.12 -m pip install \
+  git+https://github.com/dengyie/weather-morning-report.git@v0.2.0
+```
+
+如需进行开发或使用 Docker 部署，请克隆仓库：
 
 ```bash
 git clone https://github.com/dengyie/weather-morning-report.git
 cd weather-morning-report
 ```
+
+这是一个 Python 应用，因此不通过 npm 分发。后续计划将同一 Python 包发布至 PyPI；目前 GitHub Release 提供的 wheel 已可直接安装使用。
 
 ## 使用 Docker 快速开始
 
