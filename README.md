@@ -207,8 +207,58 @@ tests.
 - Additional provider-backed weather warnings and air-quality data
 - More scheduling and recipient segmentation options
 
+## v3 Development Foundation
+
+The approved breaking v3 service architecture is documented in
+[docs/V3_ARCHITECTURE.md](docs/V3_ARCHITECTURE.md). Its SQLite, Alembic,
+external-key encryption, administrator authentication, configuration center,
+job queue, scheduler, retry state machine, and single-worker lease are under
+development alongside the still-operational v0.2 commands. The worker creates
+idempotent SQLite Online Backup API snapshots and retains seven daily plus four
+weekly backups. Authenticated operators can download them from the dashboard;
+the external secret key must be backed up separately.
+
+Automatic delivery switches to a durable `dispatching` state before SMTP is
+called. If the worker stops during that window, automatic resend is suppressed
+and the result is marked unknown to avoid duplicate mail. Restoring without the
+original external key generates a replacement key and clears encrypted
+credentials so they can be entered again.
+
+Initialize a new v3 data directory interactively:
+
+```bash
+WEATHER_REPORT_DB_PATH=var/weather-report.db \
+WEATHER_REPORT_SECRET_KEY_FILE=var/secret.key \
+.venv/bin/weather-report setup
+```
+
+Database maintenance and local administrator commands:
+
+```bash
+.venv/bin/weather-report setup upgrade
+.venv/bin/weather-report setup restore /path/to/weather-report.db
+.venv/bin/weather-report admin reset-password
+.venv/bin/weather-report serve-ui
+.venv/bin/weather-report serve-worker
+```
+
+These commands use only the deployment-level `WEATHER_REPORT_DB_PATH` and
+`WEATHER_REPORT_SECRET_KEY_FILE` environment variables. Business configuration
+will move into SQLite as the v3 UI and worker are implemented.
+
+The v3 Docker Compose stack uses separate long-running UI and worker services:
+
+```bash
+docker compose run --rm setup
+docker compose up -d ui worker
+```
+
+The UI is published only at <http://127.0.0.1:8766>; the worker exposes no
+network port.
+
 ## Documentation
 
 - [Current design and behavior](docs/DESIGN.md)
+- [Approved v3 architecture](docs/V3_ARCHITECTURE.md)
 - [Docker deployment](docs/docker-deployment.md)
 - [Native systemd deployment](docs/deployment.md)

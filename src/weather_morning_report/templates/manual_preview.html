@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手动发送预览</title><link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}"></head>
+<body><main><header class="topbar"><h1>手动发送预览</h1><a href="/">返回仪表盘</a></header>
+{% if error %}<p class="error">{{ error }}</p>{% else %}
+<section class="card"><h2>{{ subject }}</h2><pre>{{ text }}</pre></section>
+<section class="card"><h2>确认入队</h2><p>确认后由 Worker 执行发送。手动任务不受 changes_only 策略影响。</p>
+<form method="post" action="/manual/enqueue">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="confirmation_token" value="{{ confirmation_token }}">
+<input type="hidden" name="preview_digest" value="{{ preview_digest }}">
+<input type="hidden" name="recipient_id" value="{{ recipient_id }}">
+<input type="hidden" name="report_type" value="{{ report_type }}">
+<button type="submit">确认并加入发送队列</button>
+</form></section>{% endif %}
+</main></body></html>
