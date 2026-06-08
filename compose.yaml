@@ -1,22 +1,38 @@
 services:
-  report:
+  ui:
     build: .
-    env_file:
-      - path: .env
-        required: false
-    volumes:
-      - weather-report-data:/app/var
-
-  settings:
-    build: .
-    env_file:
-      - path: .env
-        required: false
-    command: ["settings", "--host", "0.0.0.0", "--no-browser"]
+    command: ["serve-ui"]
+    restart: unless-stopped
+    environment: &v3-environment
+      WEATHER_REPORT_DB_PATH: /data/weather-report.db
+      WEATHER_REPORT_SECRET_KEY_FILE: /data/secret.key
+      WEB_BIND: 0.0.0.0
+      WEB_PORT: 8766
     ports:
       - "127.0.0.1:8766:8766"
     volumes:
-      - weather-report-data:/app/var
+      - weather-report-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build: .
+    command: ["serve-worker"]
+    restart: unless-stopped
+    environment: *v3-environment
+    volumes:
+      - weather-report-data:/data
+
+  setup:
+    build: .
+    command: ["setup"]
+    profiles: ["setup"]
+    environment: *v3-environment
+    volumes:
+      - weather-report-data:/data
 
 volumes:
   weather-report-data:

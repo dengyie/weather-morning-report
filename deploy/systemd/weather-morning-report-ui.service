@@ -1,0 +1,21 @@
+[Unit]
+Description=Weather Morning Report v3 administration UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=weather-report
+Group=weather-report
+WorkingDirectory=/opt/weather-morning-report
+EnvironmentFile=/opt/weather-morning-report/.env
+ExecStart=/opt/weather-morning-report/.venv/bin/weather-report serve-ui
+Restart=on-failure
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/weather-morning-report/var
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
 from weather_morning_report.models import WeatherCondition
 from weather_morning_report.providers.wttr import parse_wttr_payload
@@ -150,3 +150,54 @@ def test_comfortable_day_uses_calm_subject_and_closing() -> None:
 
     assert advice.subject == "[天气舒服，适合出门] 天气早报"
     assert advice.closing == "今天天气还算舒服，祝你一天顺利。"
+
+
+def test_midday_report_omits_expired_points() -> None:
+    snapshot = snapshot_for(midday_rain=70, evening_rain=60, uv=2)
+
+    advice = recommend(
+        snapshot,
+        report_date=snapshot.daily.forecast_date,
+        report_type="midday",
+        send_at=datetime(2026, 6, 6, 13, tzinfo=SHANGHAI),
+    )
+
+    assert [period.label for period in advice.periods] == ["下午", "晚上"]
+    assert advice.periods[0].summary == "暂无可靠数据"
+    assert "降雨概率最高 60%" in advice.periods[1].summary
+
+
+def test_evening_report_states_next_day_unavailable() -> None:
+    snapshot = snapshot_for(midday_rain=0, evening_rain=60, uv=2)
+
+    advice = recommend(
+        snapshot,
+        report_date=snapshot.daily.forecast_date,
+        report_type="evening",
+        send_at=datetime(2026, 6, 6, 17, tzinfo=SHANGHAI),
+    )
+
+    assert [period.label for period in advice.periods] == ["今晚", "次日早晨"]
+    assert advice.periods[1].summary == "暂无可靠数据"
+
+
+def test_action_signals_use_threshold_levels() -> None:
+    advice = advice_for(morning_rain=60, uv=10)
+
+    assert advice.signals.umbrella_level == 2
+    assert advice.signals.sunscreen_level == 3
+    assert advice.signals.target_precipitation_level == 2
+
+
+def test_english_recommendations_do_not_use_chinese_action_text() -> None:
+    snapshot = snapshot_for(morning_rain=60, uv=10)
+
+    advice = recommend(snapshot, report_date=date(2026, 6, 8), language="en")
+
+    assert advice.subject == "[Rain likely, carry an umbrella] Weather report"
+    assert "Carry a lightweight umbrella" == advice.umbrella
+    assert [period.label for period in advice.periods] == [
+        "Morning commute",
+        "Midday",
+        "Evening commute",
+    ]

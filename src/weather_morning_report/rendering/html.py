@@ -14,7 +14,18 @@ def render_html(
     *,
     cached: bool = False,
     recipient_name: str = "",
+    language: str = "zh-CN",
+    report_type: str = "morning",
+    greeting_visible: bool = True,
+    footer_text: str = "",
+    accent_color: str = "#2878b5",
+    data_source_visible: bool = True,
 ) -> str:
+    if language == "en":
+        return _render_english(
+            snapshot, advice, cached, recipient_name, report_type,
+            greeting_visible, footer_text, accent_color, data_source_visible,
+        )
     period_rows = "".join(
         f"""
         <tr>
@@ -32,10 +43,13 @@ def render_html(
         if cached
         else ""
     )
-    greeting = (
-        f"{escape(recipient_name.strip())}，早上好。"
-        if recipient_name.strip()
-        else "早上好。"
+    greeting_word = {"morning": "早上好。", "midday": "中午好。", "evening": "晚上好。"}[report_type]
+    greeting = f"{escape(recipient_name.strip())}，{greeting_word}" if recipient_name.strip() else greeting_word
+    greeting_html = f"<p>{greeting}</p>" if greeting_visible else ""
+    footer_html = f'<p class="closing">{escape(footer_text.strip())}</p>' if footer_text.strip() else ""
+    source_html = (
+        f'<p class="muted">数据来源：{escape(snapshot.source)}；获取时间：{snapshot.fetched_at:%Y-%m-%d %H:%M %Z}</p>'
+        if data_source_visible else ""
     )
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -51,7 +65,7 @@ def render_html(
     h2 {{ margin: 24px 0 10px; color: #17324d; font-size: 17px; }}
     p {{ margin: 8px 0; line-height: 1.65; }}
     .muted {{ color: #667884; font-size: 13px; }}
-    .focus {{ margin: 18px 0; border-left: 4px solid #2878b5; background: #edf6fc; padding: 12px 14px; }}
+    .focus {{ margin: 18px 0; border-left: 4px solid {escape(accent_color)}; background: #edf6fc; padding: 12px 14px; }}
     .summary {{ width: 100%; border-spacing: 0 8px; }}
     .summary th {{ width: 64px; color: #557180; text-align: left; vertical-align: top; }}
     .summary td {{ font-weight: bold; }}
@@ -74,7 +88,7 @@ def render_html(
       {cache_notice}
       <p class="muted">天气早报</p>
       <h1>{escape(advice.focus)}</h1>
-      <p>{greeting}</p>
+      {greeting_html}
 
       <div class="focus">
         <table class="summary" role="presentation">
@@ -100,12 +114,44 @@ def render_html(
       </p>
 
       <p class="closing">{escape(advice.closing)}</p>
-      <p class="muted">
-        数据来源：{escape(snapshot.source)}；
-        获取时间：{snapshot.fetched_at:%Y-%m-%d %H:%M %Z}
-      </p>
+      {footer_html}
+      {source_html}
     </main>
   </div>
 </body>
 </html>
+"""
+
+
+def _render_english(
+    snapshot, advice, cached, recipient_name, report_type,
+    greeting_visible, footer_text, accent_color, data_source_visible,
+) -> str:
+    rows = "".join(
+        f"<tr><th>{escape(period.label)}</th><td>{escape(period.summary)}</td></tr>"
+        for period in advice.periods
+    )
+    notice = (
+        f'<div class="notice">Live providers are unavailable; using cached data from {snapshot.fetched_at:%Y-%m-%d %H:%M %Z}.</div>'
+        if cached else ""
+    )
+    greeting_word = {"morning": "Good morning", "midday": "Good afternoon", "evening": "Good evening"}[report_type]
+    greeting = f"{greeting_word}, {escape(recipient_name.strip())}." if recipient_name.strip() else f"{greeting_word}."
+    greeting_html = f"<p>{greeting}</p>" if greeting_visible else ""
+    footer_html = f"<p>{escape(footer_text.strip())}</p>" if footer_text.strip() else ""
+    source_html = (
+        f"<p>Source: {escape(snapshot.source)}; fetched: {snapshot.fetched_at:%Y-%m-%d %H:%M %Z}</p>"
+        if data_source_visible else ""
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(advice.subject)}</title>
+<style>body{{margin:0;background:#f3f6f8;color:#24313a;font-family:Arial,sans-serif}}main{{max-width:640px;margin:auto;background:white;padding:24px;border-top:4px solid {escape(accent_color)}}}table{{width:100%;border-collapse:collapse}}th,td{{padding:10px;text-align:left;border-bottom:1px solid #e4eaee}}.notice{{padding:10px;background:#fff4d6}}</style>
+</head><body><main>{notice}<h1>{escape(advice.focus)}</h1>{greeting_html}
+<p><strong>Umbrella:</strong> {escape(advice.umbrella)}</p>
+<p><strong>Sun protection:</strong> {escape(advice.sunscreen)}</p>
+<p><strong>Clothing:</strong> {escape(advice.clothing)}</p>
+<h2>Key periods</h2><table>{rows}</table>
+<p>{escape(advice.closing)}</p>{footer_html}{source_html}
+</main></body></html>
 """

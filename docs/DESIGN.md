@@ -4,6 +4,10 @@ Status: Implemented
 Language: Python 3.12+
 Delivery schedule: 08:30 Asia/Shanghai
 
+This document describes the currently implemented v0.2 architecture. The
+approved breaking redesign for the future v3.0 service is documented in
+[V3_ARCHITECTURE.md](V3_ARCHITECTURE.md).
+
 ## Product Goal
 
 Generate concise personalized weather reports that communicate useful actions

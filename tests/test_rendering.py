@@ -65,3 +65,62 @@ def test_reports_use_default_greeting_without_recipient_name() -> None:
 
     assert "\n早上好。\n" in render_text(snapshot, advice)
     assert "<p>早上好。</p>" in render_html(snapshot, advice)
+
+
+def test_english_evening_report_uses_english_labels_and_greeting() -> None:
+    snapshot = parse_wttr_payload(
+        payload(midday_rain=0),
+        location_name="Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    advice = recommend(snapshot, language="en")
+
+    text = render_text(
+        snapshot,
+        advice,
+        recipient_name="Alice",
+        language="en",
+        report_type="evening",
+    )
+    html = render_html(snapshot, advice, recipient_name="Alice", language="en")
+
+    assert "Good evening, Alice." in text
+    assert "Umbrella:" in text
+    assert "带伞" not in text
+    assert '<html lang="en">' in html
+
+
+def test_rendering_can_hide_greeting_and_source_and_show_footer() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    advice = recommend(snapshot)
+
+    text = render_text(
+        snapshot,
+        advice,
+        greeting_visible=False,
+        footer_text="Custom footer",
+        data_source_visible=False,
+    )
+    html = render_html(
+        snapshot,
+        advice,
+        greeting_visible=False,
+        footer_text="Custom footer",
+        accent_color="#abcdef",
+        data_source_visible=False,
+    )
+
+    assert "早上好" not in text
+    assert "数据来源" not in text
+    assert "Custom footer" in text
+    assert "早上好" not in html
+    assert "数据来源" not in html
+    assert "#abcdef" in html

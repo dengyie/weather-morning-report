@@ -174,8 +174,49 @@ src/weather_morning_report/
 - 增加由天气服务提供的预警和空气质量数据
 - 增加更多定时发送与收件人分组能力
 
+## v3 开发基础
+
+已批准的 v3 破坏性重构方案记录在
+[docs/V3_ARCHITECTURE.md](docs/V3_ARCHITECTURE.md)。SQLite、Alembic、外部密钥加密、
+管理员认证、配置中心、任务队列、调度、重试状态机和单 Worker 租约已经开始开发；
+现有 v0.2 命令仍可继续使用。Worker 会通过 SQLite Online Backup API 幂等创建备份，
+默认保留 7 份每日备份和 4 份每周备份；管理员可从控制台下载数据库备份，外部密钥必须
+单独备份。
+
+自动投递在调用 SMTP 前会持久化进入 `dispatching` 状态；如果 Worker 在该窗口停止，
+系统会抑制自动重发并将结果标记为不确定，以避免重复邮件。缺少原外部密钥时执行恢复会
+生成替代密钥，并清空无法解密的凭据以便重新录入。
+
+交互式初始化新的 v3 数据目录：
+
+```bash
+WEATHER_REPORT_DB_PATH=var/weather-report.db \
+WEATHER_REPORT_SECRET_KEY_FILE=var/secret.key \
+.venv/bin/weather-report setup
+```
+
+数据库维护和本地管理员命令：
+
+```bash
+.venv/bin/weather-report setup upgrade
+.venv/bin/weather-report setup restore /path/to/weather-report.db
+.venv/bin/weather-report admin reset-password
+.venv/bin/weather-report serve-ui
+.venv/bin/weather-report serve-worker
+```
+
+v3 Docker Compose 使用独立的长期运行 UI 和 Worker 服务：
+
+```bash
+docker compose run --rm setup
+docker compose up -d ui worker
+```
+
+UI 仅发布到 <http://127.0.0.1:8766>，Worker 不暴露网络端口。
+
 ## 文档
 
 - [当前设计与行为](docs/DESIGN.md)
+- [已批准的 v3 架构](docs/V3_ARCHITECTURE.md)
 - [Docker 部署](docs/docker-deployment.md)
 - [原生 systemd 部署](docs/deployment.md)

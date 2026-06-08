@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天气早报管理登录</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <main class="narrow">
+    <section class="card">
+      <h1>天气早报管理</h1>
+      <p class="muted">登录本地管理控制台</p>
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <form method="post" action="/login">
+        <label>用户名<input name="username" autocomplete="username" required></label>
+        <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
+        <button type="submit">登录</button>
+      </form>
+      <p><a href="/forgot-password">忘记密码？</a></p>
+    </section>
+  </main>
+</body>
+</html>

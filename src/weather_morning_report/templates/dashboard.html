@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天气早报控制台</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <p class="muted">Weather Morning Report v3</p>
+        <h1>运行控制台</h1>
+      </div>
+      <form method="post" action="/logout"><button class="secondary">退出</button></form>
+    </header>
+    <section class="grid">
+      <article class="card"><h2>数据库</h2><p class="success">已就绪</p></article>
+      <article class="card"><h2>Worker</h2><p class="{% if queue.worker_active %}success{% else %}muted{% endif %}">{% if queue.worker_active %}运行中：{{ queue.worker_instance_id }}{% else %}未运行{% endif %}</p></article>
+      <article class="card"><h2>任务队列</h2><p>待处理 {{ queue.pending }} · 重试 {{ queue.retrying }} · 失败 {{ queue.failed }}</p></article>
+    </section>
+    <section class="card">
+      <h2>配置</h2>
+      <p>管理收件人、计划、SMTP、天气源、品牌和通知。</p>
+      <p><a class="button-link" href="/configuration">打开配置中心</a></p>
+    </section>
+    <section class="card">
+      <h2>手动发送</h2>
+      {% if configuration.recipients %}
+      <form class="form-grid" method="post" action="/manual/preview">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>收件人<select name="recipient_id">{% for recipient in configuration.recipients %}<option value="{{ recipient.id }}">{{ recipient.name }}</option>{% endfor %}</select></label>
+        <label>报告类型<select name="report_type"><option value="morning">morning</option><option value="midday">midday</option><option value="evening">evening</option></select></label>
+        <button type="submit">生成预览</button>
+      </form>
+      {% else %}<p class="muted">请先在配置中心添加收件人。</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>最近运行历史</h2>
+      {% if history %}
+      <table><tr><th>状态</th><th>收件人</th><th>类型</th><th>主题</th></tr>
+      {% for run in history %}<tr><td>{{ run.status }}</td><td>{{ run.recipient_name_snapshot }} · {{ run.masked_email_snapshot }}</td><td>{{ run.report_type }}</td><td>{{ run.subject or run.error_code or "" }}</td></tr>{% endfor %}
+      </table>
+      {% else %}<p class="muted">暂无运行记录。</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>数据库备份</h2>
+      <p class="{% if configuration.notifications.secret_key_backup_confirmed %}success{% else %}error{% endif %}">
+        {% if configuration.notifications.secret_key_backup_confirmed %}外部密钥已确认单独备份。{% else %}尚未确认外部密钥已单独备份，数据库备份无法恢复加密凭据。{% endif %}
+      </p>
+      {% if backups %}
+      <table><tr><th>类型</th><th>创建时间（UTC）</th><th>大小</th><th></th></tr>
+      {% for backup in backups %}<tr><td>{{ backup.kind }}</td><td>{{ backup.created_at }}</td><td>{{ backup.size_bytes }} bytes</td><td><a href="/backups/{{ backup.id }}/download">下载</a></td></tr>{% endfor %}
+      </table>
+      {% else %}<p class="muted">Worker 启动后会创建每日与每周备份。</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>安全</h2>
+      <p>当前管理员：{{ admin.username }}</p>
+      <form method="post" action="/logout-all">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="danger">退出所有设备</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

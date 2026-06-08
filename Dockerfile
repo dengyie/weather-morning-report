@@ -11,10 +11,10 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 
 RUN python -m pip install --no-cache-dir . \
-    && mkdir -p /app/var \
-    && chown -R weather-report:weather-report /app/var
+    && mkdir -p /data \
+    && chown -R weather-report:weather-report /data
 
 USER weather-report
 
 ENTRYPOINT ["weather-report"]
-CMD ["preview"]
+CMD ["serve-ui"]

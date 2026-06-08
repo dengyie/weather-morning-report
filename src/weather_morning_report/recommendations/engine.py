@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, datetime, time
 
 from weather_morning_report.models import HourlyForecast, WeatherCondition, WeatherSnapshot
-from weather_morning_report.recommendations.periods import schedule_for
+from weather_morning_report.recommendations.periods import period_bounds, schedule_for
 
 RAIN = {
     WeatherCondition.DRIZZLE,
@@ -36,20 +36,45 @@ class ReportAdvice:
     clothing: str
     closing: str
     periods: tuple[PeriodAdvice, ...]
+    signals: ActionSignals
+
+
+@dataclass(frozen=True, slots=True)
+class ActionSignals:
+    highest_risk_level: int
+    umbrella_level: int
+    sunscreen_level: int
+    clothing_level: int
+    target_precipitation_level: int
+    thunderstorm: bool
+    strong_wind: bool
+    dangerous_heat: bool
 
 
 def recommend(
     snapshot: WeatherSnapshot,
     *,
     report_date: date | None = None,
+    report_type: str = "morning",
+    send_at: datetime | None = None,
+    language: str = "zh-CN",
 ) -> ReportAdvice:
-    schedule = schedule_for(report_date or snapshot.daily.forecast_date)
+    if language not in {"zh-CN", "en"}:
+        raise ValueError(f"unsupported report language: {language}")
+    report_date = report_date or snapshot.daily.forecast_date
+    schedule = schedule_for(report_date, report_type)
     period_points = tuple(
-        _between(snapshot, period.start, period.end) for period in schedule.periods
+        _period_points(snapshot, report_date, period, send_at) for period in schedule.periods
     )
-    morning, midday, evening = period_points
-    primary_outing = morning + evening if schedule.is_workday else sum(period_points, ())
     all_points = sum(period_points, ())
+    if report_type == "morning" and schedule.is_workday and len(period_points) == 3:
+        primary_outing = period_points[0] + period_points[2]
+        midday = period_points[1]
+    else:
+        primary_outing = all_points
+        midday = tuple(
+            point for point in all_points if 11 <= point.forecast_at.hour < 15
+        )
 
     primary_rain = _rain_risk(primary_outing)
     midday_rain = _rain_risk(midday)
@@ -118,10 +143,28 @@ def recommend(
         uv,
     )
     periods = tuple(
-        PeriodAdvice(period.label, _period_summary(points))
+        PeriodAdvice(_period_label(period.label, language), _period_summary(points, language))
         for period, points in zip(schedule.periods, period_points, strict=True)
     )
-    return ReportAdvice(subject, focus, umbrella, sunscreen, clothing, closing, periods)
+    if language == "en":
+        subject, focus = _english_subject_focus(
+            thunder, heavy_rain, strong_wind, max_feels, primary_rain, uv, midday_rain
+        )
+        umbrella = _umbrella_en(primary_rain, midday_rain, thunder)
+        sunscreen = _sunscreen_en(uv)
+        clothing = _clothing_en(max_feels, all_points, rain_risk, strong_wind)
+        closing = _closing_en(thunder, heavy_rain, strong_wind, rain_risk, max_feels, uv)
+    signals = ActionSignals(
+        highest_risk_level=_risk_level(thunder, heavy_rain, strong_wind, max_feels),
+        umbrella_level=_umbrella_level(primary_rain, midday_rain, thunder),
+        sunscreen_level=_sunscreen_level(uv),
+        clothing_level=_clothing_level(max_feels),
+        target_precipitation_level=_precipitation_level(rain_risk),
+        thunderstorm=thunder,
+        strong_wind=strong_wind,
+        dangerous_heat=max_feels >= DANGEROUS_HEAT_C,
+    )
+    return ReportAdvice(subject, focus, umbrella, sunscreen, clothing, closing, periods, signals)
 
 
 def _between(
@@ -134,6 +177,20 @@ def _between(
         for point in snapshot.hourly
         if start <= point.forecast_at.timetz().replace(tzinfo=None) < end
     )
+
+
+def _period_points(snapshot, report_date, period, send_at):
+    if send_at is None and period.day_offset == 0:
+        return _between(snapshot, period.start, period.end)
+    start, end = period_bounds(report_date, period)
+    points = tuple(
+        point
+        for point in snapshot.hourly
+        if start <= point.forecast_at.replace(tzinfo=None) < end
+    )
+    if send_at is None:
+        return points
+    return tuple(point for point in points if point.forecast_at >= send_at)
 
 
 def _rain_risk(points: tuple[HourlyForecast, ...]) -> int:
@@ -188,15 +245,17 @@ def _clothing(
     return text
 
 
-def _period_summary(points: tuple[HourlyForecast, ...]) -> str:
+def _period_summary(points: tuple[HourlyForecast, ...], language: str = "zh-CN") -> str:
     if not points:
-        return "暂无可靠数据"
+        return "No reliable forecast data" if language == "en" else "暂无可靠数据"
     representative = max(
         points,
         key=lambda point: point.precipitation_probability_percent or 0,
     )
     rain = max(point.precipitation_probability_percent or 0 for point in points)
     feels = round(sum(point.feels_like_c for point in points) / len(points))
+    if language == "en":
+        return f"{representative.description}; rain up to {rain}%; feels like about {feels}°C"
     return f"{representative.description}，降雨概率最高 {rain}% ，体感约 {feels}°C"
 
 
@@ -223,3 +282,136 @@ def _closing(
     if uv >= 6:
         return "午间阳光强，出门记得做好防晒。"
     return "今天天气还算舒服，祝你一天顺利。"
+
+
+def _risk_level(thunder: bool, heavy_rain: bool, strong_wind: bool, max_feels: float) -> int:
+    if thunder or heavy_rain:
+        return 3
+    if strong_wind or max_feels >= DANGEROUS_HEAT_C:
+        return 2
+    return 0
+
+
+def _umbrella_level(primary_rain: int, midday_rain: int, thunder: bool) -> int:
+    if thunder or primary_rain >= 45:
+        return 2
+    if midday_rain >= 20:
+        return 1
+    return 0
+
+
+def _sunscreen_level(uv: float) -> int:
+    if uv >= 8:
+        return 3
+    if uv >= 6:
+        return 2
+    if uv >= 3:
+        return 1
+    return 0
+
+
+def _clothing_level(max_feels: float) -> int:
+    if max_feels >= 32:
+        return 3
+    if max_feels >= 27:
+        return 2
+    if max_feels >= 22:
+        return 1
+    return 0
+
+
+def _precipitation_level(rain: int) -> int:
+    if rain >= 45:
+        return 2
+    if rain >= 20:
+        return 1
+    return 0
+
+
+def _period_label(label: str, language: str) -> str:
+    if language != "en":
+        return label
+    return {
+        "早通勤": "Morning commute",
+        "午间": "Midday",
+        "晚通勤": "Evening commute",
+        "上午": "Morning",
+        "下午": "Afternoon",
+        "晚上": "Evening",
+        "今晚": "Tonight",
+        "次日早晨": "Next morning",
+    }[label]
+
+
+def _english_subject_focus(thunder, heavy_rain, strong_wind, max_feels, primary_rain, uv, midday_rain):
+    if thunder:
+        return "[Thunderstorm risk] Weather report", "Thunderstorms are possible; watch conditions when outside"
+    if heavy_rain:
+        return "[Heavy rain risk] Weather report", "Heavy rain may affect travel today"
+    if strong_wind:
+        return "[Strong winds today] Weather report", "Strong winds may affect outdoor activity"
+    if max_feels >= DANGEROUS_HEAT_C:
+        return "[Dangerous heat] Weather report", "It will feel dangerously hot today"
+    if primary_rain >= 45:
+        return "[Rain likely, carry an umbrella] Weather report", "Rain is likely during your main outing periods"
+    if max_feels >= 32:
+        return "[Hot today, dress lightly] Weather report", "It will feel hot today; stay ventilated and hydrated"
+    if uv >= 6:
+        return "[Strong UV, use sun protection] Weather report", "Midday UV will be strong"
+    if midday_rain >= 20:
+        return "[Possible midday rain] Weather report", "A brief midday shower is possible"
+    return "[Comfortable weather] Weather report", "Conditions should remain generally comfortable"
+
+
+def _umbrella_en(primary_rain: int, midday_rain: int, thunder: bool) -> str:
+    if thunder or primary_rain >= 45:
+        return "Carry a lightweight umbrella"
+    if midday_rain >= 20:
+        return "A midday shower is possible; consider a small umbrella"
+    return "An umbrella is usually unnecessary today"
+
+
+def _sunscreen_en(uv: float) -> str:
+    if uv >= 8:
+        return f"UV {uv:g}; use strong protection, seek shade, and reapply outdoors"
+    if uv >= 6:
+        return f"UV {uv:g}; use sunscreen and seek shade"
+    if uv >= 3:
+        return f"UV {uv:g}; use normal daily sun protection"
+    return f"UV {uv:g}; no extra sun protection is needed"
+
+
+def _clothing_en(max_feels, points, rain_risk, strong_wind) -> str:
+    if max_feels >= 32:
+        text = "Wear a breathable light top and lightweight bottoms"
+    elif max_feels >= 27:
+        text = "Wear short sleeves or a thin shirt with lightweight bottoms"
+    elif max_feels >= 22:
+        text = "Short sleeves or a thin shirt should be comfortable"
+    else:
+        text = "Bring a light outer layer"
+    if any((point.humidity_percent or 0) >= 80 for point in points):
+        text += "; prefer breathable, quick-drying fabrics"
+    if rain_risk >= 45:
+        text += "; avoid shoes that absorb water easily"
+    if strong_wind:
+        text += "; bring a wind-resistant layer and secure loose items"
+    return text
+
+
+def _closing_en(thunder, heavy_rain, strong_wind, rain, max_feels, uv) -> str:
+    if thunder:
+        return "Limit outdoor exposure during thunderstorms and travel carefully."
+    if heavy_rain:
+        return "Watch for standing water and difficult travel conditions."
+    if strong_wind:
+        return "Watch for falling objects and secure your belongings."
+    if max_feels >= DANGEROUS_HEAT_C:
+        return "Avoid prolonged outdoor activity and keep hydrated."
+    if rain >= 45:
+        return "Rain is possible today; take care on the way home."
+    if max_feels >= 32:
+        return "It will be hot today; remember to drink water."
+    if uv >= 6:
+        return "Midday sunlight will be strong; remember sun protection."
+    return "The weather should be comfortable. Have a good day."

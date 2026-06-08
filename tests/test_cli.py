@@ -5,7 +5,15 @@ from weather_morning_report.cli import build_parser, main
 
 
 def test_parser_accepts_documented_commands() -> None:
-    for command in ("preview", "send", "validate-config", "settings"):
+    for command in (
+        "preview",
+        "send",
+        "validate-config",
+        "settings",
+        "setup",
+        "serve-ui",
+        "serve-worker",
+    ):
         assert build_parser().parse_args([command]).command == command
 
 
@@ -60,3 +68,36 @@ def test_invalid_timezone_returns_cli_error(capsys, monkeypatch) -> None:
 
     assert main(["preview"]) == 1
     assert capsys.readouterr().out == "Error: TIMEZONE is invalid: Invalid/Timezone\n"
+
+
+def test_setup_command_does_not_load_legacy_config(capsys, monkeypatch, tmp_path) -> None:
+    calls = []
+    monkeypatch.setenv("TIMEZONE", "Invalid/Timezone")
+    monkeypatch.setenv("WEATHER_REPORT_DB_PATH", str(tmp_path / "report.db"))
+    monkeypatch.setenv("WEATHER_REPORT_SECRET_KEY_FILE", str(tmp_path / "secret.key"))
+    monkeypatch.setattr(cli, "_prompt_new_admin", lambda: ("admin", "secure password"))
+    monkeypatch.setattr(
+        cli,
+        "initialize_installation",
+        lambda config, **values: calls.append((config, values)),
+    )
+
+    assert main(["setup", "--timezone", "Asia/Shanghai"]) == 0
+    assert calls[0][1]["default_timezone"] == "Asia/Shanghai"
+    assert "Installation initialized" in capsys.readouterr().out
+
+
+def test_admin_reset_password_uses_v3_database_config(capsys, monkeypatch, tmp_path) -> None:
+    calls = []
+    monkeypatch.setenv("WEATHER_REPORT_DB_PATH", str(tmp_path / "report.db"))
+    monkeypatch.setenv("WEATHER_REPORT_SECRET_KEY_FILE", str(tmp_path / "secret.key"))
+    monkeypatch.setattr(cli, "_prompt_new_password", lambda: "secure password")
+    monkeypatch.setattr(
+        cli,
+        "reset_admin_password",
+        lambda config, password: calls.append((config, password)),
+    )
+
+    assert main(["admin", "reset-password"]) == 0
+    assert calls[0][1] == "secure password"
+    assert "sessions revoked" in capsys.readouterr().out
