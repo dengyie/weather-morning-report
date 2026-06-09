@@ -174,7 +174,20 @@ src/weather_morning_report/
 - 增加由天气服务提供的预警和空气质量数据
 - 增加更多定时发送与收件人分组能力
 
-## v3 开发基础
+## 版本里程碑
+
+项目目前可以按五个开发里程碑理解。完整的后来者导览请看
+[版本历史](docs/VERSION_HISTORY.md)。
+
+| 里程碑 | 重点 | 主要能力 |
+| --- | --- | --- |
+| V1 | 天气简报 Demo | wttr 获取、统一天气模型、行动建议、纯文本预览 |
+| V2 | 可靠 CLI 投递 | 缓存回退、HTML 邮件、SMTP、本地设置页、多收件人投递、Docker/systemd 部署 |
+| V3 | 自托管服务基础 | FastAPI 管理后台、SQLite/Alembic、加密凭据、任务队列、Worker、运行历史、备份 |
+| V4 | 新用户默认值 | 默认收件人与计划设置、本地验证记录 |
+| V5 | 配置工作台 | 重新设计的配置 UI、收件人邮件模板偏好、静态 UI 预览 |
+
+## 服务化开发基础
 
 已批准的 v3 破坏性重构方案记录在
 [docs/V3_ARCHITECTURE.md](docs/V3_ARCHITECTURE.md)。SQLite、Alembic、外部密钥加密、
@@ -219,7 +232,10 @@ UI 仅发布到 <http://127.0.0.1:8766>，Worker 不暴露网络端口。
 
 ## 文档
 
+- [版本历史](docs/VERSION_HISTORY.md)
 - [当前设计与行为](docs/DESIGN.md)
 - [已批准的 v3 架构](docs/V3_ARCHITECTURE.md)
+- [V4 本地验证记录](docs/V4_VALIDATION.md)
+- [V5 配置工作台开发记录](docs/V5_DEVELOPMENT.md)
 - [Docker 部署](docs/docker-deployment.md)
 - [原生 systemd 部署](docs/deployment.md)

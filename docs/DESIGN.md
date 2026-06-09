@@ -4,9 +4,12 @@ Status: Implemented
 Language: Python 3.12+
 Delivery schedule: 08:30 Asia/Shanghai
 
-This document describes the currently implemented v0.2 architecture. The
-approved breaking redesign for the future v3.0 service is documented in
-[V3_ARCHITECTURE.md](V3_ARCHITECTURE.md).
+This document describes the implemented v0.2 CLI-era architecture. For the
+project-level V1 through V5 evolution, start with
+[VERSION_HISTORY.md](VERSION_HISTORY.md). The approved breaking redesign for
+the v3+ service is documented in [V3_ARCHITECTURE.md](V3_ARCHITECTURE.md), with
+later implementation notes in [V4_VALIDATION.md](V4_VALIDATION.md) and
+[V5_DEVELOPMENT.md](V5_DEVELOPMENT.md).
 
 ## Product Goal
 

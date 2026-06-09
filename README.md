@@ -207,7 +207,21 @@ tests.
 - Additional provider-backed weather warnings and air-quality data
 - More scheduling and recipient segmentation options
 
-## v3 Development Foundation
+## Version Milestones
+
+The project has evolved through five development milestones. See
+[Version history](docs/VERSION_HISTORY.md) for the full contributor-oriented
+summary.
+
+| Milestone | Focus | Highlights |
+| --- | --- | --- |
+| V1 | Weather report demo | wttr fetch, normalized weather models, action recommendations, text preview |
+| V2 | Reliable CLI delivery | cache fallback, HTML email, SMTP, local settings UI, multi-recipient delivery, Docker/systemd deployment |
+| V3 | Self-hosted service foundation | FastAPI admin UI, SQLite/Alembic, encrypted credentials, job queue, worker, run history, backups |
+| V4 | New-user defaults | default recipient/schedule settings and local validation notes |
+| V5 | Configuration workbench | redesigned configuration UI, recipient email-template preferences, static UI preview |
+
+## Service Development Foundation
 
 The approved breaking v3 service architecture is documented in
 [docs/V3_ARCHITECTURE.md](docs/V3_ARCHITECTURE.md). Its SQLite, Alembic,
@@ -262,7 +276,10 @@ configuration and security considerations.
 
 ## Documentation
 
+- [Version history](docs/VERSION_HISTORY.md)
 - [Current design and behavior](docs/DESIGN.md)
 - [Approved v3 architecture](docs/V3_ARCHITECTURE.md)
+- [V4 local validation](docs/V4_VALIDATION.md)
+- [V5 configuration workbench development](docs/V5_DEVELOPMENT.md)
 - [Docker deployment](docs/docker-deployment.md)
 - [Native systemd deployment](docs/deployment.md)
