@@ -185,7 +185,7 @@ src/weather_morning_report/
 | V2 | 可靠 CLI 投递 | 缓存回退、HTML 邮件、SMTP、本地设置页、多收件人投递、Docker/systemd 部署 |
 | V3 | 自托管服务基础 | FastAPI 管理后台、SQLite/Alembic、加密凭据、任务队列、Worker、运行历史、备份 |
 | V4 | 新用户默认值 | 默认收件人与计划设置、本地验证记录 |
-| V5 | 配置工作台 | 重新设计的配置 UI、收件人邮件模板偏好、静态 UI 预览 |
+| V5 | 配置工作台与邮件模板 | 重新设计的配置 UI、收件人邮件模板偏好、随天气变化的 HTML 模板 |
 
 ## 服务化开发基础
 

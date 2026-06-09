@@ -15,7 +15,7 @@ development milestone.
 | V2 | Reliable email delivery | Send personalized reports to one or many recipients | CLI, scheduler, local settings UI |
 | V3 | Self-hosted service foundation | Admin UI, SQLite configuration, worker queue, backups | Long-running UI + worker |
 | V4 | Faster new-user setup | Defaults for future recipients and local validation record | V3 service with setup defaults |
-| V5 | Configuration workbench | More efficient administration UI and email-template choices | V3/V4 service with refreshed UI |
+| V5 | Configuration workbench and email templates | More efficient administration UI, recipient template choices, weather-aware HTML email visuals | V3/V4 service with refreshed UI |
 
 ## V1: Weather Report Demo
 
@@ -133,11 +133,13 @@ Related documentation:
 
 - `docs/V4_VALIDATION.md`
 
-## V5: Configuration Workbench
+## V5: Configuration Workbench and Email Templates
 
 V5 improves the administration experience after configuration grew beyond a
-single stacked settings page. It keeps the server-rendered FastAPI/Jinja model
-and does not introduce a separate frontend stack.
+single stacked settings page. It also upgrades the HTML email presentation layer
+so different recipients can use different visual templates while sharing the
+same report data and delivery path. It keeps the server-rendered FastAPI/Jinja
+model and does not introduce a separate frontend stack.
 
 Key capabilities:
 
@@ -148,6 +150,13 @@ Key capabilities:
 - Static browser preview at `docs/ui-preview/configuration.html`.
 - Visible UI milestone labels updated to `Weather Morning Report v5`.
 - Recipient email-template preferences surfaced in the recipient workflow.
+- Five named atmosphere templates: warm, action, glass gradient, minimal, and
+  dashboard.
+- Template `1` remains the default for new recipients and unknown template
+  values.
+- Weather-aware HTML templates with condition-specific palettes and inline SVG
+  scenes for clear, cloudy, fog, rain, heavy rain, thunderstorm, snow, sleet,
+  and unknown conditions.
 - UI coverage check for login, dashboard, configuration, manual preview,
   manual enqueue, backup download, and archive/restore flows.
 
@@ -155,6 +164,7 @@ Important files:
 
 - `src/weather_morning_report/templates/configuration.html`
 - `src/weather_morning_report/static/app.css`
+- `src/weather_morning_report/rendering/html.py`
 - `docs/ui-preview/configuration.html`
 - `src/weather_morning_report/email_templates.py`
 - `src/weather_morning_report/migrations/versions/0004_recipient_email_preferences.py`
