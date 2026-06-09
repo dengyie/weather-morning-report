@@ -256,6 +256,10 @@ docker compose up -d ui worker
 The UI is published only at <http://127.0.0.1:8766>; the worker exposes no
 network port.
 
+Native deployments may opt into direct HTTP access by setting
+`WEB_BIND=0.0.0.0`. See [Native systemd deployment](docs/deployment.md) for
+configuration and security considerations.
+
 ## Documentation
 
 - [Current design and behavior](docs/DESIGN.md)

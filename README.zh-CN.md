@@ -214,6 +214,9 @@ docker compose up -d ui worker
 
 UI 仅发布到 <http://127.0.0.1:8766>，Worker 不暴露网络端口。
 
+原生部署可以通过设置 `WEB_BIND=0.0.0.0` 开启 HTTP 直连。配置方式和安全注意事项请
+参阅 [原生 systemd 部署](docs/deployment.md)。
+
 ## 文档
 
 - [当前设计与行为](docs/DESIGN.md)

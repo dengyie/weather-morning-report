@@ -80,6 +80,29 @@ Delivery settings can live in `.env`, or in
 `/opt/weather-morning-report/var/settings.json` created by the local settings
 UI. Keep either file readable only by the service account.
 
+### Direct HTTP access
+
+The v3 administration UI listens on `127.0.0.1` by default. To allow direct
+HTTP access from other hosts, set these deployment values:
+
+```dotenv
+WEB_BIND=0.0.0.0
+WEB_PORT=8766
+```
+
+Restart the UI after changing the bind address:
+
+```bash
+systemctl restart weather-morning-report-ui.service
+```
+
+The UI is then available at `http://<server-address>:8766/`.
+
+Direct HTTP does not encrypt login credentials or session cookies. Use a
+strong administrator password and restrict port `8766` with a cloud firewall,
+VPN, or another network control whenever possible. Keep
+`WEB_BIND=127.0.0.1` when remote access is not required.
+
 ## 4. Validate the installation
 
 ```bash
