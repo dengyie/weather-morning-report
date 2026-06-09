@@ -13,9 +13,9 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TASK_PROTOCOL_VERSION = 1
-APPLICATION_VERSION = "3.0.0-dev"
+APPLICATION_VERSION = "4.0.0-dev"
 
 
 @dataclass(frozen=True, slots=True)

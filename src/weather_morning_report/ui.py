@@ -30,10 +30,12 @@ from weather_morning_report.database.models import BrandingSettings, Recipient, 
 from weather_morning_report.configuration import (
     archive_recipient,
     archive_schedule,
+    create_default_schedule_for_recipient,
     load_configuration,
     restore_recipient,
     restore_schedule,
     save_branding,
+    save_new_user_defaults,
     save_notifications,
     save_provider,
     save_recipient,
@@ -262,7 +264,8 @@ def create_app(config: DatabaseConfig | None = None) -> FastAPI:
         if admin is None:
             return RedirectResponse("/login", status_code=303)
         try:
-            save_recipient(
+            is_new_recipient = recipient_id is None
+            recipient = save_recipient(
                 database.path,
                 actor=admin.username,
                 recipient_id=recipient_id,
@@ -274,6 +277,12 @@ def create_app(config: DatabaseConfig | None = None) -> FastAPI:
                 language=language,
                 enabled=enabled == "on",
             )
+            if is_new_recipient:
+                create_default_schedule_for_recipient(
+                    database.path,
+                    actor=admin.username,
+                    recipient_id=recipient.id,
+                )
         except ValueError as exc:
             return _configuration_response(request, database, templates, str(exc), 400)
         return RedirectResponse("/configuration", status_code=303)
@@ -447,6 +456,39 @@ def create_app(config: DatabaseConfig | None = None) -> FastAPI:
                 retention_days=retention_days,
                 alert_cooldown_minutes=alert_cooldown_minutes,
                 secret_key_backup_confirmed=secret_key_backup_confirmed == "on",
+            )
+        except ValueError as exc:
+            return _configuration_response(request, database, templates, str(exc), 400)
+        return RedirectResponse("/configuration", status_code=303)
+
+    @app.post("/configuration/new-user-defaults", response_class=HTMLResponse)
+    def new_user_defaults_action(
+        request: Request,
+        csrf_token: str = Form(),
+        location_name: str = Form(),
+        location_query: str = Form(),
+        timezone: str = Form(),
+        language: str = Form(),
+        local_send_time: str = Form(),
+        report_type: str = Form(),
+        send_policy: str = Form(),
+        schedule_enabled: str | None = Form(None),
+    ) -> HTMLResponse:
+        admin = _verified_admin(request, database, csrf_token)
+        if admin is None:
+            return RedirectResponse("/login", status_code=303)
+        try:
+            save_new_user_defaults(
+                database.path,
+                actor=admin.username,
+                location_name=location_name,
+                location_query=location_query,
+                timezone=timezone,
+                language=language,
+                local_send_time=local_send_time,
+                report_type=report_type,
+                send_policy=send_policy,
+                schedule_enabled=schedule_enabled == "on",
             )
         except ValueError as exc:
             return _configuration_response(request, database, templates, str(exc), 400)

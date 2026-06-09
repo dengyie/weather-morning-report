@@ -3,10 +3,12 @@ from sqlalchemy import select
 
 from weather_morning_report.configuration import (
     archive_recipient,
+    create_default_schedule_for_recipient,
     load_configuration,
     restore_recipient,
     restore_schedule,
     save_branding,
+    save_new_user_defaults,
     save_notifications,
     save_provider,
     save_recipient,
@@ -14,7 +16,7 @@ from weather_morning_report.configuration import (
     save_smtp,
 )
 from weather_morning_report.database.core import DatabaseConfig, open_session
-from weather_morning_report.database.models import AuditEvent
+from weather_morning_report.database.models import AuditEvent, Schedule
 from weather_morning_report.database.operations import initialize_installation
 from weather_morning_report.database.security import decrypt_secret
 
@@ -67,6 +69,81 @@ def test_recipient_and_schedule_round_trip_with_audit(tmp_path) -> None:
         events = session.scalars(select(AuditEvent.event_type)).all()
         assert "recipient_saved" in events
         assert "schedule_saved" in events
+
+
+def test_new_user_defaults_round_trip_and_default_schedule(tmp_path) -> None:
+    config = initialized_config(tmp_path)
+
+    snapshot = load_configuration(config.path)
+    assert snapshot.new_user_defaults.location_name == "Changning District, Shanghai"
+    assert snapshot.new_user_defaults.location_query == "Changning,Shanghai"
+    assert snapshot.new_user_defaults.local_send_time == "08:30"
+    assert snapshot.new_user_defaults.schedule_enabled is True
+
+    save_new_user_defaults(
+        config.path,
+        actor="admin",
+        location_name="Beijing",
+        location_query="Beijing",
+        timezone="Asia/Shanghai",
+        language="en",
+        local_send_time="12:15",
+        report_type="midday",
+        send_policy="changes_only",
+        schedule_enabled=False,
+    )
+    saved_recipient = recipient(config)
+    schedule = create_default_schedule_for_recipient(
+        config.path,
+        actor="admin",
+        recipient_id=saved_recipient.id,
+    )
+
+    defaults = load_configuration(config.path).new_user_defaults
+    assert defaults.location_name == "Beijing"
+    assert defaults.language == "en"
+    assert schedule.local_send_time == "12:15"
+    assert schedule.report_type == "midday"
+    assert schedule.send_policy == "changes_only"
+    assert schedule.enabled is False
+    with open_session(config.path) as session:
+        events = session.scalars(select(AuditEvent.event_type)).all()
+        assert "new_user_defaults_saved" in events
+        stored = session.scalar(
+            select(Schedule).where(Schedule.recipient_id == saved_recipient.id)
+        )
+        assert stored.id == schedule.id
+
+
+def test_new_user_defaults_validate_values(tmp_path) -> None:
+    config = initialized_config(tmp_path)
+
+    with pytest.raises(ValueError, match="default location name"):
+        save_new_user_defaults(
+            config.path,
+            actor="admin",
+            location_name="",
+            location_query="Shanghai",
+            timezone="Asia/Shanghai",
+            language="zh-CN",
+            local_send_time="08:30",
+            report_type="morning",
+            send_policy="always",
+            schedule_enabled=True,
+        )
+    with pytest.raises(ValueError, match="local send time"):
+        save_new_user_defaults(
+            config.path,
+            actor="admin",
+            location_name="Shanghai",
+            location_query="Shanghai",
+            timezone="Asia/Shanghai",
+            language="zh-CN",
+            local_send_time="not-a-time",
+            report_type="morning",
+            send_policy="always",
+            schedule_enabled=True,
+        )
 
 
 def test_archiving_recipient_archives_and_disables_schedules(tmp_path) -> None:

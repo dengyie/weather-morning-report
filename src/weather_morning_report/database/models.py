@@ -136,6 +136,22 @@ class NotificationSettings(Base):
     secret_key_backup_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class NewUserDefaults(Base):
+    __tablename__ = "new_user_defaults"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    location_name: Mapped[str] = mapped_column(
+        String(240), default="Changning District, Shanghai"
+    )
+    location_query: Mapped[str] = mapped_column(String(500), default="Changning,Shanghai")
+    timezone: Mapped[str] = mapped_column(String(80), default="Asia/Shanghai")
+    language: Mapped[str] = mapped_column(String(10), default="zh-CN")
+    local_send_time: Mapped[str] = mapped_column(String(5), default="08:30")
+    report_type: Mapped[str] = mapped_column(String(20), default="morning")
+    send_policy: Mapped[str] = mapped_column(String(20), default="always")
+    schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (

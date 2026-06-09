@@ -9,8 +9,9 @@ from weather_morning_report.auth import (
     logout_all,
 )
 from weather_morning_report.backups import ensure_scheduled_backups
+from weather_morning_report.configuration import load_configuration
 from weather_morning_report.database.core import DatabaseConfig, open_session
-from weather_morning_report.database.models import AuditEvent, SessionRecord
+from weather_morning_report.database.models import AuditEvent, Schedule, SessionRecord
 from weather_morning_report.database.operations import initialize_installation
 from weather_morning_report.ui import create_app
 from weather_morning_report.providers.base import ProviderError
@@ -186,6 +187,67 @@ def test_configuration_page_creates_recipient_with_csrf(tmp_path) -> None:
 
     assert response.status_code == 303
     assert "alice@example.com" in client.get("/configuration").text
+    with open_session(config.path) as session:
+        schedule = session.scalar(select(Schedule).where(Schedule.recipient_id == 1))
+        assert schedule is not None
+        assert schedule.local_send_time == "08:30"
+        assert schedule.report_type == "morning"
+        assert schedule.send_policy == "always"
+        assert schedule.enabled is True
+
+
+def test_configuration_page_saves_new_user_defaults(tmp_path) -> None:
+    config = initialized_config(tmp_path)
+    client, csrf = authenticated_client(config)
+
+    response = client.post(
+        "/configuration/new-user-defaults",
+        data={
+            "csrf_token": csrf,
+            "location_name": "Beijing",
+            "location_query": "Beijing",
+            "timezone": "Asia/Shanghai",
+            "language": "en",
+            "local_send_time": "12:15",
+            "report_type": "midday",
+            "send_policy": "changes_only",
+        },
+    )
+
+    assert response.status_code == 303
+    defaults = load_configuration(config.path).new_user_defaults
+    assert defaults.location_name == "Beijing"
+    assert defaults.language == "en"
+    assert defaults.local_send_time == "12:15"
+    assert defaults.report_type == "midday"
+    assert defaults.send_policy == "changes_only"
+    assert defaults.schedule_enabled is False
+
+
+def test_editing_recipient_does_not_create_another_default_schedule(tmp_path) -> None:
+    config = initialized_config(tmp_path)
+    client, csrf = authenticated_client(config)
+    data = {
+        "csrf_token": csrf,
+        "name": "Alice",
+        "email": "alice@example.com",
+        "location_name": "Shanghai",
+        "location_query": "Shanghai",
+        "timezone": "Asia/Shanghai",
+        "language": "zh-CN",
+        "enabled": "on",
+    }
+    client.post("/configuration/recipients", data=data)
+    client.post(
+        "/configuration/recipients",
+        data={**data, "recipient_id": "1", "name": "Alice Updated"},
+    )
+
+    with open_session(config.path) as session:
+        schedules = session.scalars(
+            select(Schedule).where(Schedule.recipient_id == 1)
+        ).all()
+        assert len(schedules) == 1
 
 
 def test_configuration_write_rejects_invalid_csrf(tmp_path) -> None:

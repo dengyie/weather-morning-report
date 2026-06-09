@@ -17,6 +17,7 @@ from weather_morning_report.database.core import DatabaseConfig, open_session
 from weather_morning_report.database.models import (
     AuditEvent,
     BrandingSettings,
+    NewUserDefaults,
     NotificationSettings,
     ProviderSettings,
     Recipient,
@@ -41,6 +42,7 @@ class ConfigurationSnapshot:
     providers: tuple[ProviderSettings, ...]
     branding: BrandingSettings
     notifications: NotificationSettings
+    new_user_defaults: NewUserDefaults
 
 
 def load_configuration(path: Path, *, include_archived: bool = False) -> ConfigurationSnapshot:
@@ -59,6 +61,7 @@ def load_configuration(path: Path, *, include_archived: bool = False) -> Configu
             ),
             branding=_singleton(session, BrandingSettings),
             notifications=_singleton(session, NotificationSettings),
+            new_user_defaults=_singleton(session, NewUserDefaults),
         )
 
 
@@ -154,6 +157,26 @@ def save_schedule(
         _audit(session, actor, "schedule_saved", {"schedule_id": schedule_id})
         session.commit()
         return schedule
+
+
+def create_default_schedule_for_recipient(
+    path: Path,
+    *,
+    actor: str,
+    recipient_id: int,
+) -> Schedule:
+    with open_session(path) as session:
+        defaults = _singleton(session, NewUserDefaults)
+    return save_schedule(
+        path,
+        actor=actor,
+        schedule_id=None,
+        recipient_id=recipient_id,
+        local_send_time=defaults.local_send_time,
+        report_type=defaults.report_type,
+        send_policy=defaults.send_policy,
+        enabled=defaults.schedule_enabled,
+    )
 
 
 def archive_schedule(path: Path, schedule_id: int, *, actor: str) -> None:
@@ -280,6 +303,38 @@ def save_notifications(
         settings.alert_cooldown_minutes = alert_cooldown_minutes
         settings.secret_key_backup_confirmed = secret_key_backup_confirmed
         _audit(session, actor, "notifications_saved")
+        session.commit()
+
+
+def save_new_user_defaults(
+    path: Path,
+    *,
+    actor: str,
+    location_name: str,
+    location_query: str,
+    timezone: str,
+    language: str,
+    local_send_time: str,
+    report_type: str,
+    send_policy: str,
+    schedule_enabled: bool,
+) -> None:
+    values = {
+        "location_name": _required(location_name, "default location name"),
+        "location_query": _required(location_query, "default location query"),
+        "timezone": _timezone(timezone),
+        "language": _choice(language, LANGUAGES, "default report language"),
+        "local_send_time": _parse_time(local_send_time),
+        "report_type": _choice(report_type, REPORT_TYPES, "default report type"),
+        "send_policy": _choice(send_policy, SEND_POLICIES, "default send policy"),
+        "schedule_enabled": schedule_enabled,
+    }
+    with open_session(path) as session:
+        defaults = _singleton(session, NewUserDefaults)
+        for field, value in values.items():
+            setattr(defaults, field, value)
+        defaults.updated_at = utc_now()
+        _audit(session, actor, "new_user_defaults_saved")
         session.commit()
 
 
