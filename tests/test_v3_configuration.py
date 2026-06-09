@@ -16,7 +16,11 @@ from weather_morning_report.configuration import (
     save_smtp,
 )
 from weather_morning_report.database.core import DatabaseConfig, open_session
-from weather_morning_report.database.models import AuditEvent, Schedule
+from weather_morning_report.database.models import (
+    AuditEvent,
+    RecipientEmailPreference,
+    Schedule,
+)
 from weather_morning_report.database.operations import initialize_installation
 from weather_morning_report.database.security import decrypt_secret
 
@@ -64,11 +68,68 @@ def test_recipient_and_schedule_round_trip_with_audit(tmp_path) -> None:
     snapshot = load_configuration(config.path)
 
     assert snapshot.recipients[0].email == "alice@example.com"
+    assert snapshot.email_template_for(snapshot.recipients[0].id) == "1"
     assert snapshot.schedules[0].id == saved_schedule.id
     with open_session(config.path) as session:
         events = session.scalars(select(AuditEvent.event_type)).all()
         assert "recipient_saved" in events
         assert "schedule_saved" in events
+
+
+def test_recipient_email_template_preference_round_trip(tmp_path) -> None:
+    config = initialized_config(tmp_path)
+    saved_recipient = save_recipient(
+        config.path,
+        actor="admin",
+        recipient_id=None,
+        name="Alice",
+        email="alice@example.com",
+        location_name="Shanghai",
+        location_query="Shanghai",
+        timezone="Asia/Shanghai",
+        language="zh-CN",
+        enabled=True,
+        email_template="5",
+    )
+
+    snapshot = load_configuration(config.path)
+
+    assert snapshot.email_template_for(saved_recipient.id) == "5"
+    with open_session(config.path) as session:
+        preference = session.scalar(select(RecipientEmailPreference))
+        assert preference.recipient_id == saved_recipient.id
+        assert preference.email_template == "5"
+
+    save_recipient(
+        config.path,
+        actor="admin",
+        recipient_id=saved_recipient.id,
+        name="Alice",
+        email="alice@example.com",
+        location_name="Shanghai",
+        location_query="Shanghai",
+        timezone="Asia/Shanghai",
+        language="zh-CN",
+        enabled=True,
+        email_template="3",
+    )
+
+    assert load_configuration(config.path).email_template_for(saved_recipient.id) == "3"
+
+    with pytest.raises(ValueError, match="email template"):
+        save_recipient(
+            config.path,
+            actor="admin",
+            recipient_id=saved_recipient.id,
+            name="Alice",
+            email="alice@example.com",
+            location_name="Shanghai",
+            location_query="Shanghai",
+            timezone="Asia/Shanghai",
+            language="zh-CN",
+            enabled=True,
+            email_template="unknown",
+        )
 
 
 def test_new_user_defaults_round_trip_and_default_schedule(tmp_path) -> None:

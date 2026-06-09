@@ -11,7 +11,12 @@ from weather_morning_report.auth import (
 from weather_morning_report.backups import ensure_scheduled_backups
 from weather_morning_report.configuration import load_configuration
 from weather_morning_report.database.core import DatabaseConfig, open_session
-from weather_morning_report.database.models import AuditEvent, Schedule, SessionRecord
+from weather_morning_report.database.models import (
+    AuditEvent,
+    RecipientEmailPreference,
+    Schedule,
+    SessionRecord,
+)
 from weather_morning_report.database.operations import initialize_installation
 from weather_morning_report.ui import create_app
 from weather_morning_report.providers.base import ProviderError
@@ -181,6 +186,7 @@ def test_configuration_page_creates_recipient_with_csrf(tmp_path) -> None:
             "location_query": "Shanghai",
             "timezone": "Asia/Shanghai",
             "language": "zh-CN",
+            "email_template": "2",
             "enabled": "on",
         },
     )
@@ -194,6 +200,12 @@ def test_configuration_page_creates_recipient_with_csrf(tmp_path) -> None:
         assert schedule.report_type == "morning"
         assert schedule.send_policy == "always"
         assert schedule.enabled is True
+        preference = session.scalar(
+            select(RecipientEmailPreference).where(
+                RecipientEmailPreference.recipient_id == 1
+            )
+        )
+        assert preference.email_template == "2"
 
 
 def test_configuration_page_saves_new_user_defaults(tmp_path) -> None:
@@ -235,6 +247,7 @@ def test_editing_recipient_does_not_create_another_default_schedule(tmp_path) ->
         "location_query": "Shanghai",
         "timezone": "Asia/Shanghai",
         "language": "zh-CN",
+        "email_template": "1",
         "enabled": "on",
     }
     client.post("/configuration/recipients", data=data)

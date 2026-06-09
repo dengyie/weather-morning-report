@@ -37,6 +37,41 @@ def test_html_report_contains_email_safe_content() -> None:
     assert "<script" not in html
     assert "http://" not in html
     assert "https://" not in html
+    assert 'data-email-template="1"' in html
+
+
+def test_html_report_supports_all_email_templates() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    advice = recommend(snapshot)
+
+    for template in ("1", "2", "3", "4", "5"):
+        html = render_html(snapshot, advice, email_template=template)
+        assert f'data-email-template="{template}"' in html
+        assert "天气早报" in html
+        assert "<script" not in html
+
+
+def test_html_report_uses_modern_visual_enhancements() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+
+    html = render_html(snapshot, recommend(snapshot), email_template="3")
+
+    assert "--accent" in html
+    assert "linear-gradient" in html
+    assert "box-shadow" in html
+    assert "backdrop-filter" in html
 
 
 def test_reports_use_configured_recipient_name() -> None:
