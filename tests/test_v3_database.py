@@ -111,6 +111,28 @@ def test_password_is_argon2_hashed_and_reset_revokes_sessions(tmp_path) -> None:
         assert session.scalar(select(SessionRecord)) is None
 
 
+def test_short_admin_password_is_supported(tmp_path) -> None:
+    config = database_config(tmp_path)
+
+    initialize_installation(
+        config,
+        username="admin",
+        password="admin",
+        default_timezone="Asia/Shanghai",
+    )
+    with open_session(config.path) as session:
+        admin = session.scalar(select(Admin))
+        assert admin is not None
+        assert verify_password(admin.password_hash, "admin")
+
+    reset_admin_password(config, "x")
+
+    with open_session(config.path) as session:
+        admin = session.scalar(select(Admin))
+        assert admin is not None
+        assert verify_password(admin.password_hash, "x")
+
+
 def test_encrypted_secret_is_not_readable_from_database_value(tmp_path) -> None:
     config = database_config(tmp_path)
     initialize(config)

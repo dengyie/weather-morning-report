@@ -43,7 +43,6 @@ def decrypt_secret(path: Path, value: bytes) -> str:
 
 
 def hash_password(password: str) -> str:
-    _validate_password(password)
     return _PASSWORD_HASHER.hash(password)
 
 
@@ -52,8 +51,3 @@ def verify_password(password_hash: str, password: str) -> bool:
         return _PASSWORD_HASHER.verify(password_hash, password)
     except VerifyMismatchError:
         return False
-
-
-def _validate_password(password: str) -> None:
-    if len(password) < 12:
-        raise ValueError("administrator password must contain at least 12 characters")
