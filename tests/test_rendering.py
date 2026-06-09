@@ -1,3 +1,8 @@
+from dataclasses import replace
+
+import pytest
+
+from weather_morning_report.models import WeatherCondition
 from weather_morning_report.providers.wttr import parse_wttr_payload
 from weather_morning_report.recommendations import recommend
 from weather_morning_report.rendering.html import render_html
@@ -72,6 +77,128 @@ def test_html_report_uses_modern_visual_enhancements() -> None:
     assert "linear-gradient" in html
     assert "box-shadow" in html
     assert "backdrop-filter" in html
+
+
+def test_html_weather_visual_changes_with_current_condition() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    clear_snapshot = replace(
+        snapshot,
+        current=replace(snapshot.current, condition=WeatherCondition.CLEAR),
+    )
+    rain_snapshot = replace(
+        snapshot,
+        current=replace(snapshot.current, condition=WeatherCondition.RAIN),
+    )
+
+    clear_html = render_html(clear_snapshot, recommend(clear_snapshot))
+    rain_html = render_html(rain_snapshot, recommend(rain_snapshot))
+
+    assert 'data-weather-condition="clear"' in clear_html
+    assert 'data-weather-condition="rain"' in rain_html
+    assert 'class="weather-visual weather-visual-warm weather-clear"' in clear_html
+    assert 'class="weather-visual weather-visual-warm weather-rain"' in rain_html
+    assert "weather-scene-clear" in clear_html
+    assert "weather-scene-rain" in rain_html
+    assert 'r="42"' in clear_html
+    assert "M61 129l-11 25" in rain_html
+    assert "M61 129l-11 25" not in clear_html
+    assert clear_html != rain_html
+
+
+def test_weather_color_theme_changes_with_current_condition() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    rain_snapshot = replace(
+        snapshot,
+        current=replace(snapshot.current, condition=WeatherCondition.RAIN),
+    )
+
+    html = render_html(rain_snapshot, recommend(rain_snapshot), email_template="1")
+
+    assert '<body class="weather-rain">' in html
+    assert "body.weather-rain" in html
+    assert "#e8f4f9" in html
+    assert "body.weather-clear" in html
+    assert "#f7efe4" in html
+    assert "body { margin: 0; background: var(--weather-page-bg);" in html
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        WeatherCondition.PARTLY_CLOUDY,
+        WeatherCondition.CLOUDY,
+        WeatherCondition.FOG,
+        WeatherCondition.DRIZZLE,
+        WeatherCondition.RAIN,
+        WeatherCondition.HEAVY_RAIN,
+        WeatherCondition.THUNDERSTORM,
+        WeatherCondition.SNOW,
+        WeatherCondition.SLEET,
+        WeatherCondition.UNKNOWN,
+    ],
+)
+def test_non_clear_weather_themes_do_not_use_clear_page_colors(
+    condition: WeatherCondition,
+) -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    themed_snapshot = replace(
+        snapshot,
+        current=replace(snapshot.current, condition=condition),
+    )
+
+    html = render_html(themed_snapshot, recommend(themed_snapshot), email_template="1")
+    condition_class = condition.value.replace("_", "-")
+    body_start = html.index(f"body.weather-{condition_class}")
+    body_end = html.index("    }", body_start)
+    weather_block = html[body_start:body_end]
+
+    assert "#f7efe4" not in weather_block
+    assert "#ecd9c0" not in weather_block
+    assert "#fff8ec" not in weather_block
+    assert "#f3d1a6" not in weather_block
+
+
+def test_all_html_templates_include_weather_visual() -> None:
+    snapshot = parse_wttr_payload(
+        payload(),
+        location_name="Changning District, Shanghai",
+        timezone=SHANGHAI,
+        source="fixture",
+        fetched_at=FETCHED_AT,
+    )
+    rain_snapshot = replace(
+        snapshot,
+        current=replace(snapshot.current, condition=WeatherCondition.RAIN),
+    )
+    advice = recommend(rain_snapshot)
+
+    for template in ("1", "2", "3", "4", "5"):
+        html = render_html(rain_snapshot, advice, email_template=template)
+        assert f'data-email-template="{template}"' in html
+        assert 'data-weather-condition="rain"' in html
+        assert '<body class="weather-rain">' in html
+        assert "body { margin: 0; background: var(--weather-page-bg);" in html
+        assert "weather-visual" in html
+        assert "weather-scene-rain" in html
+        assert "M61 129l-11 25" in html
 
 
 def test_reports_use_configured_recipient_name() -> None:
