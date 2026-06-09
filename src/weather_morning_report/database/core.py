@@ -13,7 +13,7 @@ from alembic.config import Config as AlembicConfig
 from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 TASK_PROTOCOL_VERSION = 1
 APPLICATION_VERSION = "4.0.0-dev"
 

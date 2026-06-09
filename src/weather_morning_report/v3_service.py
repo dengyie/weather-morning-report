@@ -22,6 +22,7 @@ from weather_morning_report.database.models import (
     Job,
     NotificationSettings,
     Recipient,
+    RecipientEmailPreference,
     RunHistory,
     Schedule,
     SmtpSettings,
@@ -76,11 +77,17 @@ def process_report_job(
         smtp = session.get(SmtpSettings, 1)
         notifications = session.get(NotificationSettings, 1)
         branding = session.get(BrandingSettings, 1)
+        email_preference = session.scalar(
+            select(RecipientEmailPreference).where(
+                RecipientEmailPreference.recipient_id == job.recipient_id
+            )
+        )
         if recipient is None or recipient.archived_at is not None:
             raise ValueError("recipient does not exist or is archived")
         if smtp is None or notifications is None or branding is None:
             raise ValueError("delivery configuration is incomplete")
         send_policy = schedule.send_policy if schedule else "always"
+        email_template = email_preference.email_template if email_preference else "1"
 
     timezone = ZoneInfo(recipient.timezone)
     local_now = current.astimezone(timezone)
@@ -142,6 +149,7 @@ def process_report_job(
         language=recipient.language,
         report_type=job.report_type,
         accent_color=branding.accent_color,
+        email_template=email_template,
         **render_options,
     )
     if job.kind == "manual" and job.preview_digest:
@@ -182,10 +190,16 @@ def preview_recipient_report(
     with open_session(config.path) as session:
         recipient = session.get(Recipient, recipient_id)
         branding = session.get(BrandingSettings, 1)
+        email_preference = session.scalar(
+            select(RecipientEmailPreference).where(
+                RecipientEmailPreference.recipient_id == recipient_id
+            )
+        )
         if recipient is None or recipient.archived_at is not None:
             raise ValueError("recipient does not exist or is archived")
         if branding is None:
             raise ValueError("branding configuration is incomplete")
+        email_template = email_preference.email_template if email_preference else "1"
     timezone = ZoneInfo(recipient.timezone)
     local_now = current.astimezone(timezone)
     result = load_snapshot(
@@ -219,6 +233,7 @@ def preview_recipient_report(
         result.snapshot,
         advice,
         accent_color=branding.accent_color,
+        email_template=email_template,
         **options,
     )
     return subject, text, html

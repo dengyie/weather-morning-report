@@ -21,11 +21,16 @@ from weather_morning_report.database.models import (
     NotificationSettings,
     ProviderSettings,
     Recipient,
+    RecipientEmailPreference,
     Schedule,
     SmtpSettings,
     utc_now,
 )
 from weather_morning_report.database.security import encrypt_secret
+from weather_morning_report.email_templates import (
+    DEFAULT_EMAIL_TEMPLATE,
+    EMAIL_TEMPLATES,
+)
 
 REPORT_TYPES = {"morning", "midday", "evening"}
 SEND_POLICIES = {"always", "changes_only"}
@@ -37,12 +42,19 @@ HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 @dataclass(frozen=True, slots=True)
 class ConfigurationSnapshot:
     recipients: tuple[Recipient, ...]
+    email_preferences: tuple[RecipientEmailPreference, ...]
     schedules: tuple[Schedule, ...]
     smtp: SmtpSettings
     providers: tuple[ProviderSettings, ...]
     branding: BrandingSettings
     notifications: NotificationSettings
     new_user_defaults: NewUserDefaults
+
+    def email_template_for(self, recipient_id: int) -> str:
+        for preference in self.email_preferences:
+            if preference.recipient_id == recipient_id:
+                return preference.email_template
+        return DEFAULT_EMAIL_TEMPLATE
 
 
 def load_configuration(path: Path, *, include_archived: bool = False) -> ConfigurationSnapshot:
@@ -54,6 +66,13 @@ def load_configuration(path: Path, *, include_archived: bool = False) -> Configu
             schedule_query = schedule_query.where(Schedule.archived_at.is_(None))
         return ConfigurationSnapshot(
             recipients=tuple(session.scalars(recipient_query)),
+            email_preferences=tuple(
+                session.scalars(
+                    select(RecipientEmailPreference).order_by(
+                        RecipientEmailPreference.recipient_id
+                    )
+                )
+            ),
             schedules=tuple(session.scalars(schedule_query)),
             smtp=_singleton(session, SmtpSettings),
             providers=tuple(
@@ -77,6 +96,7 @@ def save_recipient(
     timezone: str,
     language: str,
     enabled: bool,
+    email_template: str = DEFAULT_EMAIL_TEMPLATE,
 ) -> Recipient:
     values = {
         "name": _required(name, "recipient name"),
@@ -87,6 +107,11 @@ def save_recipient(
         "language": _choice(language, LANGUAGES, "report language"),
         "enabled": enabled,
     }
+    email_template = _choice(
+        email_template or DEFAULT_EMAIL_TEMPLATE,
+        EMAIL_TEMPLATES,
+        "email template",
+    )
     with open_session(path) as session:
         recipient = session.get(Recipient, recipient_id) if recipient_id else Recipient(**values)
         if recipient_id and recipient is None:
@@ -95,6 +120,17 @@ def save_recipient(
             setattr(recipient, field, value)
         recipient.updated_at = utc_now()
         session.add(recipient)
+        session.flush()
+        preference = session.scalar(
+            select(RecipientEmailPreference).where(
+                RecipientEmailPreference.recipient_id == recipient.id
+            )
+        )
+        if preference is None:
+            preference = RecipientEmailPreference(recipient_id=recipient.id)
+            session.add(preference)
+        preference.email_template = email_template
+        preference.updated_at = utc_now()
         _audit(session, actor, "recipient_saved", {"recipient_id": recipient_id})
         session.commit()
         return recipient

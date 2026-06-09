@@ -26,7 +26,13 @@ from weather_morning_report.database.models import RunHistory
 from sqlalchemy import select
 from weather_morning_report.v3_service import preview_recipient_report, report_digest
 from weather_morning_report.providers.base import ProviderError
-from weather_morning_report.database.models import BrandingSettings, Recipient, utc_now
+from weather_morning_report.database.models import (
+    BrandingSettings,
+    Recipient,
+    RecipientEmailPreference,
+    utc_now,
+)
+from weather_morning_report.email_templates import EMAIL_TEMPLATE_OPTIONS
 from weather_morning_report.configuration import (
     archive_recipient,
     archive_schedule,
@@ -258,6 +264,7 @@ def create_app(config: DatabaseConfig | None = None) -> FastAPI:
         location_query: str = Form(),
         timezone: str = Form(),
         language: str = Form(),
+        email_template: str = Form("1"),
         enabled: str | None = Form(None),
     ) -> HTMLResponse:
         admin = _verified_admin(request, database, csrf_token)
@@ -275,6 +282,7 @@ def create_app(config: DatabaseConfig | None = None) -> FastAPI:
                 location_query=location_query,
                 timezone=timezone,
                 language=language,
+                email_template=email_template,
                 enabled=enabled == "on",
             )
             if is_new_recipient:
@@ -552,6 +560,7 @@ def _configuration_response(
             ),
             "include_archived": include_archived,
             "csrf_token": _csrf_token(request.cookies[SESSION_COOKIE]),
+            "email_template_options": EMAIL_TEMPLATE_OPTIONS,
             "error": error,
         },
         status_code=status_code,
@@ -596,8 +605,14 @@ def _manual_configuration_digest(path: Path, recipient_id: int) -> str:
     with open_session(path) as session:
         recipient = session.get(Recipient, recipient_id)
         branding = session.get(BrandingSettings, 1)
+        email_preference = session.scalar(
+            select(RecipientEmailPreference).where(
+                RecipientEmailPreference.recipient_id == recipient_id
+            )
+        )
         if recipient is None or branding is None:
             return ""
+        email_template = email_preference.email_template if email_preference else "1"
         values = (
             recipient.name,
             recipient.email,
@@ -608,6 +623,7 @@ def _manual_configuration_digest(path: Path, recipient_id: int) -> str:
             recipient.enabled,
             recipient.archived_at,
             recipient.updated_at,
+            email_template,
             branding.report_title,
             branding.greeting_visible,
             branding.footer_text,

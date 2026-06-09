@@ -291,3 +291,31 @@ def test_v3_preview_applies_branding_without_sending(tmp_path, monkeypatch) -> N
     assert "数据来源" not in text
     assert "#abcdef" in html
     assert "数据来源" not in html
+
+
+def test_v3_preview_uses_recipient_email_template(tmp_path, monkeypatch) -> None:
+    config = configured_database(tmp_path)
+    stub_weather(monkeypatch)
+    save_recipient(
+        config.path,
+        actor="admin",
+        recipient_id=1,
+        name="Alice",
+        email="alice@example.com",
+        location_name="Shanghai",
+        location_query="Shanghai",
+        timezone="Asia/Shanghai",
+        language="zh-CN",
+        enabled=True,
+        email_template="5",
+    )
+
+    _subject, _text, html = preview_recipient_report(
+        config,
+        recipient_id=1,
+        report_type="morning",
+        now=NOW,
+    )
+
+    assert 'data-email-template="5"' in html
+    assert "行动清单" in html

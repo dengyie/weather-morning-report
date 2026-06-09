@@ -4,10 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>天气早报配置中心</title>
+  <link rel="stylesheet" href="../static/app.css">
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
 </head>
 <body>
-  <main class="app-shell">
+  <a class="skip-link" href="#defaults">跳到配置内容</a>
+  <main class="app-shell config-shell">
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">W</span>
@@ -16,153 +18,285 @@
           <h1>配置中心</h1>
         </div>
       </div>
-      <nav class="nav-links" aria-label="主导航"><a href="/">仪表盘</a><a href="/configuration" aria-current="page">配置中心</a><a href="/configuration{% if not include_archived %}?archived=1{% endif %}">{% if include_archived %}隐藏归档项{% else %}查看归档项{% endif %}</a></nav>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="/">仪表盘</a>
+        <a href="/configuration" aria-current="page">配置中心</a>
+        <a href="/configuration{% if not include_archived %}?archived=1{% endif %}">{% if include_archived %}隐藏归档项{% else %}查看归档项{% endif %}</a>
+      </nav>
     </header>
-    <section class="hero">
-      <p class="eyebrow">服务设置</p>
-      <h1>把每一份天气早报送到正确的人</h1>
-      <p>集中管理收件人、发送计划、邮件服务、天气数据源与通知策略。</p>
-    </section>
+
     {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 
-    <section class="card">
-      <div class="section-head"><div><h2>新用户默认值</h2><p class="muted">仅影响未来新增用户；不会修改已有用户或已有发送计划。新增用户保存后会自动创建一条默认发送计划。</p></div></div>
-      <form class="form-grid" method="post" action="/configuration/new-user-defaults">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>默认地点名称<input name="location_name" value="{{ configuration.new_user_defaults.location_name }}" required></label>
-        <label>默认 Provider 查询<input name="location_query" value="{{ configuration.new_user_defaults.location_query }}" required></label>
-        <label>默认时区<input name="timezone" value="{{ configuration.new_user_defaults.timezone }}" required></label>
-        <label>默认报告语言<select name="language"><option value="zh-CN"{% if configuration.new_user_defaults.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if configuration.new_user_defaults.language == "en" %} selected{% endif %}>English</option></select></label>
-        <label>默认发送时间<input type="time" name="local_send_time" value="{{ configuration.new_user_defaults.local_send_time }}" required></label>
-        <label>默认报告类型<select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-        <label>默认发送策略<select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-        <label class="checkbox"><input type="checkbox" name="schedule_enabled"{% if configuration.new_user_defaults.schedule_enabled %} checked{% endif %}>自动创建的默认计划启用</label>
-        <button type="submit">保存默认值</button>
-      </form>
-    </section>
+    <div class="config-layout">
+      <aside class="config-sidebar" aria-label="配置导航">
+        <section class="sidebar-panel weather-panel">
+          <p class="eyebrow">Settings Workbench</p>
+          <h2>更快完成配置</h2>
+          <p>按工作流管理默认值、收件人、计划和投递能力。</p>
+          <div class="weather-orb" aria-hidden="true"></div>
+        </section>
+        <nav class="side-nav">
+          <a href="#defaults"><span>01</span>新用户默认值</a>
+          <a href="#recipients"><span>02</span>收件人</a>
+          <a href="#schedules"><span>03</span>发送计划</a>
+          <a href="#delivery"><span>04</span>投递与数据源</a>
+          <a href="#appearance"><span>05</span>报告品牌</a>
+          <a href="#notifications"><span>06</span>通知与保留</a>
+        </nav>
+        <section class="sidebar-panel sidebar-summary">
+          <div>
+            <strong>{{ configuration.recipients|length }}</strong>
+            <span>收件人</span>
+          </div>
+          <div>
+            <strong>{{ configuration.schedules|length }}</strong>
+            <span>发送计划</span>
+          </div>
+          <div>
+            <strong>{{ configuration.providers|length }}</strong>
+            <span>数据源</span>
+          </div>
+        </section>
+      </aside>
 
-    <section class="card">
-      <div class="section-head"><div><h2>收件人</h2><p class="muted">每位收件人可以拥有独立地点、时区和语言。</p></div></div>
-      <form class="form-grid" method="post" action="/configuration/recipients">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>称呼<input name="name" required></label>
-        <label>邮箱<input type="email" name="email" required></label>
-        <label>地点名称<input name="location_name" value="{{ configuration.new_user_defaults.location_name }}" required></label>
-        <label>Provider 查询<input name="location_query" value="{{ configuration.new_user_defaults.location_query }}" required></label>
-        <label>时区<input name="timezone" value="{{ configuration.new_user_defaults.timezone }}" required></label>
-        <label>报告语言<select name="language"><option value="zh-CN"{% if configuration.new_user_defaults.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if configuration.new_user_defaults.language == "en" %} selected{% endif %}>English</option></select></label>
-        <label class="checkbox"><input type="checkbox" name="enabled" checked>启用</label>
-        <button type="submit">添加收件人</button>
-      </form>
-      {% for recipient in configuration.recipients %}
-      <div class="item{% if recipient.archived_at %} archived{% endif %}">
-        <form class="form-grid" method="post" action="/configuration/recipients">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="recipient_id" value="{{ recipient.id }}">
-          <label>称呼<input name="name" value="{{ recipient.name }}" required></label>
-          <label>邮箱<input type="email" name="email" value="{{ recipient.email }}" required></label>
-          <label>地点名称<input name="location_name" value="{{ recipient.location_name }}" required></label>
-          <label>Provider 查询<input name="location_query" value="{{ recipient.location_query }}" required></label>
-          <label>时区<input name="timezone" value="{{ recipient.timezone }}" required></label>
-          <label>报告语言<select name="language"><option value="zh-CN"{% if recipient.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if recipient.language == "en" %} selected{% endif %}>English</option></select></label>
-          <label class="checkbox"><input type="checkbox" name="enabled"{% if recipient.enabled %} checked{% endif %}>启用</label>
-          {% if not recipient.archived_at %}<button type="submit">保存</button>{% endif %}
-        </form>
-        <form method="post" action="/configuration/recipients/{{ recipient.id }}/{% if recipient.archived_at %}restore{% else %}archive{% endif %}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="{% if recipient.archived_at %}secondary{% else %}danger{% endif %}" type="submit">{% if recipient.archived_at %}恢复{% else %}归档{% endif %}</button>
-        </form>
+      <div class="config-main">
+        <section class="hero config-hero">
+          <div>
+            <p class="eyebrow">服务设置</p>
+            <h1>把天气早报配置成一张清晰工作台</h1>
+            <p>默认值负责加速新增用户，工作台负责高效维护已有收件人、发送计划、邮件服务与通知策略。</p>
+          </div>
+          <div class="hero-stats" aria-label="配置摘要">
+            <span><strong>{{ configuration.new_user_defaults.local_send_time }}</strong>默认发送</span>
+            <span><strong>{{ configuration.new_user_defaults.language }}</strong>默认语言</span>
+            <span><strong>{{ configuration.smtp.security }}</strong>SMTP 安全</span>
+          </div>
+        </section>
+
+        <section class="card workbench-card" id="defaults">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Defaults</p>
+              <h2>新用户默认值</h2>
+              <p class="muted">仅影响未来新增用户；新增收件人保存后会自动创建一条默认发送计划。</p>
+            </div>
+            <span class="pill pill-info">{{ configuration.new_user_defaults.location_name }}</span>
+          </div>
+          <form class="form-grid compact-grid" method="post" action="/configuration/new-user-defaults">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>默认地点名称<input name="location_name" value="{{ configuration.new_user_defaults.location_name }}" required></label>
+            <label>默认 Provider 查询<input name="location_query" value="{{ configuration.new_user_defaults.location_query }}" required></label>
+            <label>默认时区<input name="timezone" value="{{ configuration.new_user_defaults.timezone }}" required></label>
+            <label>默认报告语言<select name="language"><option value="zh-CN"{% if configuration.new_user_defaults.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if configuration.new_user_defaults.language == "en" %} selected{% endif %}>English</option></select></label>
+            <label>默认发送时间<input type="time" name="local_send_time" value="{{ configuration.new_user_defaults.local_send_time }}" required></label>
+            <label>默认报告类型<select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+            <label>默认发送策略<select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+            <label class="checkbox"><input type="checkbox" name="schedule_enabled"{% if configuration.new_user_defaults.schedule_enabled %} checked{% endif %}>自动计划启用</label>
+            <button type="submit">保存默认值</button>
+          </form>
+        </section>
+
+        <section class="card workbench-card" id="recipients">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Recipients</p>
+              <h2>收件人工作台</h2>
+              <p class="muted">先快速添加，再在下方按人维护地点、语言和邮件模板。</p>
+            </div>
+            <span class="pill">{{ configuration.recipients|length }} 位</span>
+          </div>
+          <form class="quick-create" method="post" action="/configuration/recipients">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>称呼<input name="name" placeholder="例如：Mango" required></label>
+            <label>邮箱<input type="email" name="email" placeholder="name@example.com" required></label>
+            <label>地点<input name="location_name" value="{{ configuration.new_user_defaults.location_name }}" required></label>
+            <label>查询<input name="location_query" value="{{ configuration.new_user_defaults.location_query }}" required></label>
+            <label>时区<input name="timezone" value="{{ configuration.new_user_defaults.timezone }}" required></label>
+            <label>语言<select name="language"><option value="zh-CN"{% if configuration.new_user_defaults.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if configuration.new_user_defaults.language == "en" %} selected{% endif %}>English</option></select></label>
+            <label>邮件模板<select name="email_template">{% for value, label in email_template_options %}<option value="{{ value }}"{% if value == "1" %} selected{% endif %}>{{ value }} · {{ label }}</option>{% endfor %}</select></label>
+            <label class="checkbox"><input type="checkbox" name="enabled" checked>启用</label>
+            <button type="submit">添加收件人</button>
+          </form>
+
+          <div class="record-list">
+            {% for recipient in configuration.recipients %}
+            <article class="record-card{% if recipient.archived_at %} archived{% endif %}">
+              <div class="record-summary">
+                <span class="record-avatar">{{ recipient.name[:1] }}</span>
+                <div>
+                  <h3>{{ recipient.name }}</h3>
+                  <p>{{ recipient.email }}</p>
+                  <div class="record-badges">
+                    <span class="pill{% if recipient.enabled %} pill-success{% endif %}">{% if recipient.enabled %}启用{% else %}停用{% endif %}</span>
+                    <span class="pill">{{ recipient.language }}</span>
+                    <span class="pill">模板 {{ configuration.email_template_for(recipient.id) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="record-editor">
+                <form class="form-grid compact-grid" method="post" action="/configuration/recipients">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="recipient_id" value="{{ recipient.id }}">
+                  <label>称呼<input name="name" value="{{ recipient.name }}" required></label>
+                  <label>邮箱<input type="email" name="email" value="{{ recipient.email }}" required></label>
+                  <label>地点名称<input name="location_name" value="{{ recipient.location_name }}" required></label>
+                  <label>Provider 查询<input name="location_query" value="{{ recipient.location_query }}" required></label>
+                  <label>时区<input name="timezone" value="{{ recipient.timezone }}" required></label>
+                  <label>报告语言<select name="language"><option value="zh-CN"{% if recipient.language == "zh-CN" %} selected{% endif %}>中文</option><option value="en"{% if recipient.language == "en" %} selected{% endif %}>English</option></select></label>
+                  <label>邮件模板<select name="email_template">{% for value, label in email_template_options %}<option value="{{ value }}"{% if value == configuration.email_template_for(recipient.id) %} selected{% endif %}>{{ value }} · {{ label }}</option>{% endfor %}</select></label>
+                  <label class="checkbox"><input type="checkbox" name="enabled"{% if recipient.enabled %} checked{% endif %}>启用</label>
+                  {% if not recipient.archived_at %}<button type="submit">保存</button>{% endif %}
+                </form>
+                <form class="record-action" method="post" action="/configuration/recipients/{{ recipient.id }}/{% if recipient.archived_at %}restore{% else %}archive{% endif %}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="{% if recipient.archived_at %}secondary{% else %}danger{% endif %}" type="submit">{% if recipient.archived_at %}恢复收件人{% else %}归档收件人{% endif %}</button>
+                </form>
+              </div>
+            </article>
+            {% else %}
+            <div class="empty-state">还没有收件人。上方添加第一位后，系统会自动生成默认发送计划。</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="card workbench-card" id="schedules">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Schedules</p>
+              <h2>发送计划</h2>
+              <p class="muted">控制不同报告在收件人当地时间的发送节奏。</p>
+            </div>
+            <span class="pill">{{ configuration.schedules|length }} 条计划</span>
+          </div>
+          {% if configuration.recipients %}
+          <form class="quick-create schedule-create" method="post" action="/configuration/schedules">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>收件人<select name="recipient_id">{% for recipient in configuration.recipients if not recipient.archived_at %}<option value="{{ recipient.id }}">{{ recipient.name }}</option>{% endfor %}</select></label>
+            <label>本地发送时间<input type="time" name="local_send_time" value="{{ configuration.new_user_defaults.local_send_time }}" required></label>
+            <label>报告类型<select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+            <label>发送策略<select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+            <label class="checkbox"><input type="checkbox" name="enabled"{% if configuration.new_user_defaults.schedule_enabled %} checked{% endif %}>启用</label>
+            <button type="submit">添加计划</button>
+          </form>
+          {% else %}
+          <p class="muted">请先添加收件人。</p>
+          {% endif %}
+
+          <div class="schedule-table" role="table" aria-label="发送计划">
+            <div class="schedule-head" role="row">
+              <span>收件人</span><span>时间</span><span>类型</span><span>策略</span><span>状态</span><span>保存</span><span>归档</span>
+            </div>
+            {% for schedule in configuration.schedules %}
+            <div class="schedule-row{% if schedule.archived_at %} archived{% endif %}" role="row">
+              <form class="schedule-edit" method="post" action="/configuration/schedules">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+                <label><span>收件人</span><select name="recipient_id">{% for recipient in configuration.recipients %}<option value="{{ recipient.id }}"{% if recipient.id == schedule.recipient_id %} selected{% endif %}>{{ recipient.name }}</option>{% endfor %}</select></label>
+                <label><span>时间</span><input type="time" name="local_send_time" value="{{ schedule.local_send_time }}" required></label>
+                <label><span>类型</span><select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == schedule.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+                <label><span>策略</span><select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == schedule.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+                <label class="checkbox table-checkbox"><input type="checkbox" name="enabled"{% if schedule.enabled %} checked{% endif %}>启用</label>
+                {% if not schedule.archived_at %}<button type="submit">保存</button>{% else %}<span></span>{% endif %}
+              </form>
+              <form class="schedule-archive" method="post" action="/configuration/schedules/{{ schedule.id }}/{% if schedule.archived_at %}restore{% else %}archive{% endif %}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="{% if schedule.archived_at %}secondary{% else %}danger{% endif %}" type="submit">{% if schedule.archived_at %}恢复{% else %}归档{% endif %}</button>
+              </form>
+            </div>
+            {% else %}
+            <div class="empty-state">暂无发送计划。</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="grid grid-two config-section-grid" id="delivery">
+          <article class="card workbench-card">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">SMTP</p>
+                <h2>邮件服务</h2>
+                <p class="muted">用于正式报告、测试邮件和管理员告警。</p>
+              </div>
+            </div>
+            <form class="form-grid compact-grid" method="post" action="/configuration/smtp">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>主机<input name="host" value="{{ configuration.smtp.host }}"></label>
+              <label>端口<input type="number" name="port" value="{{ configuration.smtp.port }}" required></label>
+              <label>用户名<input name="username" value="{{ configuration.smtp.username }}"></label>
+              <label>新密码<input type="password" name="password" placeholder="{% if configuration.smtp.encrypted_password %}已保存，留空保持不变{% else %}SMTP 密码{% endif %}"></label>
+              <label>安全方式<select name="security">{% for value in ["starttls", "ssl", "plain"] %}<option value="{{ value }}"{% if value == configuration.smtp.security %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+              <label>发件邮箱<input type="email" name="sender_email" value="{{ configuration.smtp.sender_email }}"></label>
+              <button type="submit">保存 SMTP</button>
+            </form>
+          </article>
+
+          <article class="card workbench-card">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Providers</p>
+                <h2>天气数据源</h2>
+                <p class="muted">配置数据源优先级与凭据。</p>
+              </div>
+            </div>
+            <div class="provider-stack">
+              {% for provider in configuration.providers %}
+              <form class="provider-row" method="post" action="/configuration/providers/{{ provider.id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div>
+                  <strong>{{ provider.provider_type }}</strong>
+                  <span class="muted">优先级 {{ provider.priority }}</span>
+                </div>
+                <label>优先级<input type="number" name="priority" value="{{ provider.priority }}" min="0"></label>
+                <label>替换凭据<input type="password" name="credentials" placeholder="{% if provider.encrypted_credentials %}已保存，留空保持不变{% else %}当前 Provider 无需凭据{% endif %}"></label>
+                <label class="checkbox"><input type="checkbox" name="enabled"{% if provider.enabled %} checked{% endif %}>启用</label>
+                <button type="submit">保存</button>
+              </form>
+              {% endfor %}
+            </div>
+          </article>
+        </section>
+
+        <section class="card workbench-card" id="appearance">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Branding</p>
+              <h2>报告品牌</h2>
+              <p class="muted">定制收件人看到的标题、强调色和页脚。</p>
+            </div>
+            <span class="brand-swatch" style="--brand-color: {{ configuration.branding.accent_color }}"></span>
+          </div>
+          <form class="form-grid compact-grid" method="post" action="/configuration/branding">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>报告标题<input name="report_title" value="{{ configuration.branding.report_title }}"></label>
+            <label>强调色<input type="color" name="accent_color" value="{{ configuration.branding.accent_color }}"></label>
+            <label class="wide">页脚<input name="footer_text" value="{{ configuration.branding.footer_text }}"></label>
+            <label class="checkbox"><input type="checkbox" name="greeting_visible"{% if configuration.branding.greeting_visible %} checked{% endif %}>显示问候语</label>
+            <label class="checkbox"><input type="checkbox" name="data_source_visible"{% if configuration.branding.data_source_visible %} checked{% endif %}>显示数据源</label>
+            <button type="submit">保存品牌</button>
+          </form>
+        </section>
+
+        <section class="card workbench-card" id="notifications">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Alerts</p>
+              <h2>通知与数据保留</h2>
+              <p class="muted">配置故障通知、历史保留周期和密钥备份状态。</p>
+            </div>
+          </div>
+          <form class="form-grid compact-grid" method="post" action="/configuration/notifications">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>管理员邮箱<input type="email" name="admin_email" value="{{ configuration.notifications.admin_email }}"></label>
+            <label>Webhook URL<input type="url" name="webhook_url" value="{{ configuration.notifications.webhook_url }}"></label>
+            <label>历史保留天数<input type="number" name="retention_days" value="{{ configuration.notifications.retention_days }}"></label>
+            <label>告警冷却分钟<input type="number" name="alert_cooldown_minutes" value="{{ configuration.notifications.alert_cooldown_minutes }}"></label>
+            <label class="checkbox"><input type="checkbox" name="webhook_enabled"{% if configuration.notifications.webhook_enabled %} checked{% endif %}>启用 Webhook</label>
+            <label class="checkbox"><input type="checkbox" name="secret_key_backup_confirmed"{% if configuration.notifications.secret_key_backup_confirmed %} checked{% endif %}>已单独备份密钥</label>
+            <button type="submit">保存通知设置</button>
+          </form>
+        </section>
       </div>
-      {% endfor %}
-    </section>
-
-    <section class="card">
-      <div class="section-head"><div><h2>发送计划</h2><p class="muted">控制不同报告在收件人当地时间的发送节奏。</p></div></div>
-      {% if configuration.recipients %}
-      <form class="form-grid" method="post" action="/configuration/schedules">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>收件人<select name="recipient_id">{% for recipient in configuration.recipients if not recipient.archived_at %}<option value="{{ recipient.id }}">{{ recipient.name }}</option>{% endfor %}</select></label>
-        <label>本地发送时间<input type="time" name="local_send_time" value="{{ configuration.new_user_defaults.local_send_time }}" required></label>
-        <label>报告类型<select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-        <label>发送策略<select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == configuration.new_user_defaults.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-        <label class="checkbox"><input type="checkbox" name="enabled"{% if configuration.new_user_defaults.schedule_enabled %} checked{% endif %}>启用</label>
-        <button type="submit">添加计划</button>
-      </form>
-      {% else %}<p class="muted">请先添加收件人。</p>{% endif %}
-      {% for schedule in configuration.schedules %}
-      <div class="item{% if schedule.archived_at %} archived{% endif %}">
-        <form class="form-grid" method="post" action="/configuration/schedules">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
-          <label>收件人<select name="recipient_id">{% for recipient in configuration.recipients %}<option value="{{ recipient.id }}"{% if recipient.id == schedule.recipient_id %} selected{% endif %}>{{ recipient.name }}</option>{% endfor %}</select></label>
-          <label>时间<input type="time" name="local_send_time" value="{{ schedule.local_send_time }}" required></label>
-          <label>类型<select name="report_type">{% for value in ["morning", "midday", "evening"] %}<option value="{{ value }}"{% if value == schedule.report_type %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-          <label>策略<select name="send_policy">{% for value in ["always", "changes_only"] %}<option value="{{ value }}"{% if value == schedule.send_policy %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-          <label class="checkbox"><input type="checkbox" name="enabled"{% if schedule.enabled %} checked{% endif %}>启用</label>
-          {% if not schedule.archived_at %}<button type="submit">保存</button>{% endif %}
-        </form>
-        <form method="post" action="/configuration/schedules/{{ schedule.id }}/{% if schedule.archived_at %}restore{% else %}archive{% endif %}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="{% if schedule.archived_at %}secondary{% else %}danger{% endif %}" type="submit">{% if schedule.archived_at %}恢复{% else %}归档{% endif %}</button>
-        </form>
-      </div>
-      {% endfor %}
-    </section>
-
-    <section class="card">
-      <div class="section-head"><div><h2>SMTP 邮件服务</h2><p class="muted">用于正式报告、测试邮件和管理员告警。</p></div></div>
-      <form class="form-grid" method="post" action="/configuration/smtp">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>主机<input name="host" value="{{ configuration.smtp.host }}"></label>
-        <label>端口<input type="number" name="port" value="{{ configuration.smtp.port }}" required></label>
-        <label>用户名<input name="username" value="{{ configuration.smtp.username }}"></label>
-        <label>新密码<input type="password" name="password" placeholder="{% if configuration.smtp.encrypted_password %}已保存，留空保持不变{% else %}SMTP 密码{% endif %}"></label>
-        <label>安全方式<select name="security">{% for value in ["starttls", "ssl", "plain"] %}<option value="{{ value }}"{% if value == configuration.smtp.security %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
-        <label>发件邮箱<input type="email" name="sender_email" value="{{ configuration.smtp.sender_email }}"></label>
-        <button type="submit">保存 SMTP</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <div class="section-head"><div><h2>天气数据源</h2><p class="muted">配置数据源优先级与凭据。</p></div></div>
-      {% for provider in configuration.providers %}
-      <form class="form-grid item" method="post" action="/configuration/providers/{{ provider.id }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>Provider<input value="{{ provider.provider_type }}" disabled></label>
-        <label>优先级<input type="number" name="priority" value="{{ provider.priority }}" min="0"></label>
-        <label>替换凭据<input type="password" name="credentials" placeholder="{% if provider.encrypted_credentials %}已保存，留空保持不变{% else %}当前 Provider 无需凭据{% endif %}"></label>
-        <label class="checkbox"><input type="checkbox" name="enabled"{% if provider.enabled %} checked{% endif %}>启用</label>
-        <button type="submit">保存 Provider</button>
-      </form>
-      {% endfor %}
-    </section>
-
-    <section class="card">
-      <div class="section-head"><div><h2>报告品牌</h2><p class="muted">定制收件人看到的标题、强调色和页脚。</p></div></div>
-      <form class="form-grid" method="post" action="/configuration/branding">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>报告标题<input name="report_title" value="{{ configuration.branding.report_title }}"></label>
-        <label>强调色<input type="color" name="accent_color" value="{{ configuration.branding.accent_color }}"></label>
-        <label class="wide">页脚<input name="footer_text" value="{{ configuration.branding.footer_text }}"></label>
-        <label class="checkbox"><input type="checkbox" name="greeting_visible"{% if configuration.branding.greeting_visible %} checked{% endif %}>显示问候语</label>
-        <label class="checkbox"><input type="checkbox" name="data_source_visible"{% if configuration.branding.data_source_visible %} checked{% endif %}>显示数据源</label>
-        <button type="submit">保存品牌</button>
-      </form>
-    </section>
-
-    <section class="card">
-      <div class="section-head"><div><h2>通知与数据保留</h2><p class="muted">配置故障通知、历史保留周期和密钥备份状态。</p></div></div>
-      <form class="form-grid" method="post" action="/configuration/notifications">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label>管理员邮箱<input type="email" name="admin_email" value="{{ configuration.notifications.admin_email }}"></label>
-        <label>Webhook URL<input type="url" name="webhook_url" value="{{ configuration.notifications.webhook_url }}"></label>
-        <label>历史保留天数<input type="number" name="retention_days" value="{{ configuration.notifications.retention_days }}"></label>
-        <label>告警冷却分钟<input type="number" name="alert_cooldown_minutes" value="{{ configuration.notifications.alert_cooldown_minutes }}"></label>
-        <label class="checkbox"><input type="checkbox" name="webhook_enabled"{% if configuration.notifications.webhook_enabled %} checked{% endif %}>启用 Webhook</label>
-        <label class="checkbox"><input type="checkbox" name="secret_key_backup_confirmed"{% if configuration.notifications.secret_key_backup_confirmed %} checked{% endif %}>已单独备份密钥</label>
-        <button type="submit">保存通知设置</button>
-      </form>
-    </section>
+    </div>
   </main>
 </body>
 </html>

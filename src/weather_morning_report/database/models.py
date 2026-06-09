@@ -78,6 +78,17 @@ class Recipient(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+class RecipientEmailPreference(Base):
+    __tablename__ = "recipient_email_preferences"
+    __table_args__ = (
+        UniqueConstraint("recipient_id", name="uq_recipient_email_preference"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("recipients.id"), nullable=False)
+    email_template: Mapped[str] = mapped_column(String(20), default="1")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
 class Schedule(Base):
     __tablename__ = "schedules"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

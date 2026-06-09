@@ -17,6 +17,7 @@ from weather_morning_report.database.models import (
     NewUserDefaults,
     NotificationSettings,
     ProviderSettings,
+    RecipientEmailPreference,
     SessionRecord,
     SmtpSettings,
 )
@@ -61,6 +62,7 @@ def test_initialize_creates_complete_schema_and_restricted_key(tmp_path) -> None
         "schedules",
         "smtp_settings",
         "new_user_defaults",
+        "recipient_email_preferences",
         "provider_settings",
         "jobs",
         "run_history",
@@ -75,13 +77,14 @@ def test_initialize_creates_complete_schema_and_restricted_key(tmp_path) -> None
     assert stat.S_IMODE(config.secret_key_file.stat().st_mode) == 0o600
     with sqlite3.connect(config.path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0003_new_user_defaults",
+            "0004_recipient_email_preferences",
         )
     with open_session(config.path) as session:
         defaults = session.get(NewUserDefaults, 1)
         assert defaults is not None
         assert defaults.location_name == "Changning District, Shanghai"
         assert defaults.local_send_time == "08:30"
+        assert session.scalar(select(RecipientEmailPreference)) is None
 
 
 def test_initialize_refuses_to_overwrite_installation(tmp_path) -> None:
