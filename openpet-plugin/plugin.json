@@ -1,0 +1,19 @@
+{
+  "id": "com.weather-morning-report.openpet",
+  "name": "Weather Morning Report",
+  "version": "1.0.0",
+  "description": "Action-oriented weather reports for OpenPet, with umbrella, sunscreen, clothing, and period risk reminders.",
+  "main": "index.js",
+  "configSchema": "config.schema.json",
+  "permissions": ["network", "pet:say", "storage"],
+  "network": {
+    "allowlist": ["wttr.in", "wttr.is"]
+  },
+  "commands": [
+    { "id": "refresh", "title": "Refresh weather report" },
+    { "id": "announce", "title": "Announce weather report" },
+    { "id": "last", "title": "Announce last report" },
+    { "id": "status", "title": "Show plugin status" },
+    { "id": "clear-cache", "title": "Clear cached weather" }
+  ]
+}

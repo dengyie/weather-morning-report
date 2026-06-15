@@ -1,0 +1,52 @@
+{
+  "title": "Weather Morning Report Settings",
+  "description": "Configure the location and presentation defaults for the OpenPet weather report plugin.",
+  "type": "object",
+  "properties": {
+    "locationName": {
+      "type": "string",
+      "title": "Location name",
+      "description": "Human-readable location name shown in pet messages.",
+      "default": "Shanghai"
+    },
+    "locationQuery": {
+      "type": "string",
+      "title": "Location query",
+      "description": "Public location query sent to wttr.in or wttr.is.",
+      "default": "Shanghai"
+    },
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language used for generated weather messages.",
+      "default": "zh-CN",
+      "enum": ["zh-CN", "en"]
+    },
+    "reportType": {
+      "type": "string",
+      "title": "Report type",
+      "description": "Primary period focus for the report.",
+      "default": "morning",
+      "enum": ["morning", "midday", "evening"]
+    },
+    "announceOnRefresh": {
+      "type": "boolean",
+      "title": "Announce on refresh",
+      "description": "Ask the pet to say the report when refresh completes.",
+      "default": true
+    },
+    "cacheMaxAgeMinutes": {
+      "type": "number",
+      "title": "Cache max age",
+      "description": "Maximum cache age accepted when providers are unavailable.",
+      "default": 120,
+      "enum": [30, 60, 120, 240]
+    },
+    "includeSource": {
+      "type": "boolean",
+      "title": "Include source",
+      "description": "Include the weather provider host in the pet message.",
+      "default": false
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "weather-morning-report",
+  "version": "1.0.0",
+  "description": "OpenPet JavaScript plugin for action-oriented weather reports.",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/**/*.test.js",
+    "lint": "node scripts/check-plugin-artifact.js",
+    "typecheck": "node --check scripts/build-plugin.js && node --check scripts/check-plugin-artifact.js && node --check scripts/package-plugin.js && node --check src/activate.js && node --check src/commands.js && node --check src/config.js && node --check src/period-schedule.js && node --check src/recommendation-engine.js && node --check src/text-renderer.js && node --check src/weather-provider.js && node --check src/wttr-parser.js && node --check openpet-plugin/index.js",
+    "build": "node scripts/build-plugin.js",
+    "package:plugin": "node scripts/package-plugin.js"
+  }
+}

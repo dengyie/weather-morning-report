@@ -12,16 +12,44 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - name: Checkout plugin
+        uses: actions/checkout@v6
         with:
-          python-version: "3.12"
-          cache: pip
-      - run: python -m pip install build
-      - run: python -m build
-      - run: python -m pip install dist/*.whl
-      - run: weather-report --help
+          path: weather-morning-report
+      - name: Checkout OpenPet
+        uses: actions/checkout@v6
+        with:
+          repository: dengyie/OpenPet
+          path: OpenPet
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: weather-morning-report/package.json
+      - name: Install OpenPet dependencies
+        run: npm install
+        working-directory: OpenPet
+      - name: Test plugin
+        run: npm test
+        working-directory: weather-morning-report
+      - name: Build plugin
+        run: npm run build
+        working-directory: weather-morning-report
+      - name: Lint plugin artifact
+        run: npm run lint
+        working-directory: weather-morning-report
+      - name: Typecheck plugin scripts
+        run: npm run typecheck
+        working-directory: weather-morning-report
+      - name: Package plugin
+        run: npm run package:plugin
+        working-directory: weather-morning-report
+      - name: Validate plugin zip with OpenPet
+        run: npm run validate:plugin -- ../weather-morning-report/release/weather-morning-report.openpet-plugin.zip
+        working-directory: OpenPet
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "$GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" release/weather-morning-report.openpet-plugin.zip --generate-notes --title "$GITHUB_REF_NAME"
+        working-directory: weather-morning-report
