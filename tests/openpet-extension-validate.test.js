@@ -52,5 +52,5 @@ test('OpenPet validator accepts the unified extension zip', (t) => {
 
   assert.match(validation.output, /Plugin package validation passed/)
   assert.match(validation.output, /Weather Morning Report/)
-  assert.match(validation.output, /Commands: refresh, announce, last, status, clear-cache, send-email-now, setup/)
+  assert.match(validation.output, /Commands: refresh, announce, last, status, clear-cache, send-email-now, setup, cleanup/)
 })

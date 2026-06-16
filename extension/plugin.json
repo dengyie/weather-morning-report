@@ -16,6 +16,10 @@
       { "id": "status", "title": "Show weather report status", "command": "node commands/status.js", "cwd": "." },
       { "id": "clear-cache", "title": "Clear weather cache", "command": "node commands/clear-cache.js", "cwd": "." },
       { "id": "send-email-now", "title": "Send Email now", "command": "node commands/send-email-now.js", "cwd": "." },
+      { "id": "setup", "title": "Setup Weather Morning Report", "command": "node commands/setup.js", "cwd": "." },
+      { "id": "cleanup", "title": "Clean up Weather Morning Report data", "command": "node commands/cleanup.js", "cwd": "." }
+    ],
+    "setup": [
       { "id": "setup", "title": "Setup Weather Morning Report", "command": "node commands/setup.js", "cwd": "." }
     ],
     "services": [
@@ -40,6 +44,7 @@
     "notes": [
       "The service binds to loopback by default.",
       "SMTP credentials are managed by the service, not by the OpenPet command runner.",
+      "Cleanup is explicit and limited to known service-owned files under OPENPET_DATA_DIR, OPENPET_CACHE_DIR, and OPENPET_LOG_DIR.",
       "This manifest targets the upcoming unified OpenPet extension model and is validated locally until the official validator is available."
     ]
   },

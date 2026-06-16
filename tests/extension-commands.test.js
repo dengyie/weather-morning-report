@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
-const { mkdtempSync, rmSync } = require('node:fs')
+const { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 
@@ -58,6 +58,90 @@ test('setup command emits JSON metadata without running dependency installation'
   assert.equal(result.json.ok, true)
   assert.equal(result.json.command, 'setup')
   assert.equal(result.json.requiresInstall, false)
+})
+
+test('cleanup command dry-runs known service-owned files without deleting data', () => {
+  withTempCache((root) => {
+    const dataDir = path.join(root, 'data')
+    const cacheDir = path.join(root, 'cache')
+    const logDir = path.join(root, 'logs')
+    mkdirSync(dataDir, { recursive: true })
+    mkdirSync(cacheDir, { recursive: true })
+    mkdirSync(logDir, { recursive: true })
+    const files = [
+      path.join(dataDir, 'configuration.json'),
+      path.join(dataDir, 'delivery-history.json'),
+      path.join(dataDir, 'scheduler-state.json'),
+      path.join(cacheDir, 'weather-command-cache.json'),
+      path.join(logDir, 'service.log')
+    ]
+    for (const file of files) writeFileSync(file, '{}\n')
+
+    const result = runCommand('cleanup.js', {
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    assert.equal(result.status, 0)
+    assert.equal(result.json.ok, true)
+    assert.equal(result.json.command, 'cleanup')
+    assert.equal(result.json.dryRun, true)
+    assert.deepEqual(result.json.deleted, [])
+    assert.deepEqual(result.json.planned.map((entry) => entry.file).sort(), files.sort())
+    for (const file of files) assert.equal(existsSync(file), true)
+  })
+})
+
+test('cleanup command deletes only known service-owned files when confirmed', () => {
+  withTempCache((root) => {
+    const dataDir = path.join(root, 'data')
+    const cacheDir = path.join(root, 'cache')
+    const logDir = path.join(root, 'logs')
+    mkdirSync(dataDir, { recursive: true })
+    mkdirSync(cacheDir, { recursive: true })
+    mkdirSync(logDir, { recursive: true })
+    const serviceOwnedFiles = [
+      path.join(dataDir, 'configuration.json'),
+      path.join(dataDir, 'delivery-history.json'),
+      path.join(dataDir, 'scheduler-state.json'),
+      path.join(cacheDir, 'weather-command-cache.json'),
+      path.join(logDir, 'service.log')
+    ]
+    const unrelatedFiles = [
+      path.join(dataDir, 'custom.json'),
+      path.join(cacheDir, 'other-cache.json'),
+      path.join(logDir, 'other.log')
+    ]
+    for (const file of serviceOwnedFiles.concat(unrelatedFiles)) writeFileSync(file, '{}\n')
+
+    const result = runCommand('cleanup.js', {
+      input: '{"confirm":true}',
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    assert.equal(result.status, 0)
+    assert.equal(result.json.ok, true)
+    assert.equal(result.json.dryRun, false)
+    assert.deepEqual(result.json.deleted.map((entry) => entry.file).sort(), serviceOwnedFiles.sort())
+    for (const file of serviceOwnedFiles) assert.equal(existsSync(file), false)
+    for (const file of unrelatedFiles) assert.equal(existsSync(file), true)
+  })
+})
+
+test('cleanup command removes command cache stored in OPENPET_DATA_DIR fallback', () => {
+  withTempCache((dataDir) => {
+    const cacheFile = path.join(dataDir, 'weather-command-cache.json')
+    writeFileSync(cacheFile, '{}\n')
+
+    const result = runCommand('cleanup.js', {
+      input: '{"confirm":true}',
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: '' }
+    })
+
+    assert.equal(result.status, 0)
+    assert.equal(result.json.ok, true)
+    assert.equal(result.json.deleted.some((entry) => entry.file === cacheFile), true)
+    assert.equal(existsSync(cacheFile), false)
+  })
 })
 
 test('status command consumes stdin JSON and environment defaults', () => {
