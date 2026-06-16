@@ -40,6 +40,8 @@ copyRequired(path.join(repoRoot, 'openpet-plugin/README.md'), path.join(stageDir
 for (const directory of ['commands', 'core', 'rendering', 'service', 'static']) {
   copyRequired(path.join(repoRoot, directory), path.join(stageDir, directory))
 }
+mkdirSync(path.join(stageDir, 'compat'), { recursive: true })
+copyRequired(path.join(repoRoot, 'openpet-plugin/index.js'), path.join(stageDir, 'compat/openpet-main.js'))
 writePackageMetadata()
 
 execFileSync('zip', ['-qr', archivePath, '.'], { cwd: stageDir, stdio: 'pipe' })

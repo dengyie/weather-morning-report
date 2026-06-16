@@ -20,6 +20,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: dengyie/OpenPet
+          ref: codex/plugin-service-health-checks
           path: OpenPet
       - name: Setup Node
         uses: actions/setup-node@v6

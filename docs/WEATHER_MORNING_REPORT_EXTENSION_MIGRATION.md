@@ -1263,6 +1263,53 @@ Runtime evidence still required after repository alignment:
 - service start/stop and `/health` state should be smoke-tested through OpenPet service lifecycle controls;
 - command logs and result JSON display should be verified through OpenPet command execution surfaces.
 
+## 13.10 Phase 9 Planned Runtime Smoke
+
+Phase 9 should convert the runtime evidence gaps into an automated smoke pass against the sibling OpenPet runtime service.
+
+Planned evidence:
+
+- dashboard `main` opens through OpenPet's dashboard opener and records a `dashboard:main` plugin log;
+- service `weather-service` starts through OpenPet lifecycle controls, returns healthy from `/health`, stops cleanly, and records `service:weather-service` logs;
+- command `status` runs through OpenPet command execution, returns JSON-compatible status data, and records command completion logs.
+
+Implementation note:
+
+- current OpenPet runs commands through a plugin `main` handler, while the unified extension target also declares shell command entries;
+- Phase 9 should package the existing bundled command-plugin `main` as a compatibility entry inside the unified extension without removing the target `entries.commands` declarations.
+
+## 13.11 Phase 9 Development Record
+
+Phase 9 adds automated runtime smoke evidence for the unified extension against the sibling OpenPet runtime service.
+
+Implemented artifacts:
+
+- `scripts/openpet-runtime-smoke.js`
+- `tests/openpet-runtime-smoke.test.js`
+- `docs/superpowers/specs/2026-06-17-phase-9-openpet-runtime-smoke-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-9-openpet-runtime-smoke.md`
+- updated `extension/plugin.json`
+
+Runtime compatibility behavior:
+
+- unified package now declares `main: compat/openpet-main.js` for current OpenPet command execution;
+- `compat/openpet-main.js` is copied from the existing bundled `openpet-plugin/index.js` during `npm run package:extension`;
+- target `entries.commands`, `entries.services`, and `entries.dashboards` remain in place;
+- top-level `permissions` and `network.allowlist` are declared so current OpenPet SDK permission checks can run the compatibility command handlers.
+
+Smoke evidence:
+
+- `npm run smoke:openpet-runtime -- --json` packages the extension, extracts the zip into a temporary OpenPet-style plugin directory, installs production dependencies there, and loads it through `/Users/mango/project/codex/OpenPet/src/main/services/plugin-service.js`;
+- dashboard `main` opens through OpenPet's dashboard opener and records `dashboard:main`;
+- service `weather-service` starts through OpenPet lifecycle controls, returns healthy from `/health`, and records `service:weather-service` logs;
+- command `status` runs through OpenPet command execution, returns JSON-compatible status data, and records `Command completed`.
+- GitHub Actions checks out `dengyie/OpenPet@codex/plugin-service-health-checks` until those runtime service APIs land on OpenPet `main`.
+
+Remaining runtime evidence:
+
+- full Electron Control Center visual smoke remains outside this repository-owned phase;
+- direct shell spawning for `entries.commands` remains an OpenPet host capability target, while the compatibility `main` keeps current runtime command execution working.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:
