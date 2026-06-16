@@ -1163,6 +1163,75 @@ Current packaging boundary:
 - scheduler service files are intentionally excluded from the current OpenPet command-plugin zip;
 - unified service/dashboard/scheduler packaging remains deferred to Phase 7.
 
+## 13.8 Phase 7 Development Record
+
+Phase 7 is complete with a dual-package transition toward the unified OpenPet extension model. The repository still produces the current command-plugin artifact for today's OpenPet validator, and now also produces a repository-validated unified extension artifact that includes active commands, service, dashboard assets, and package metadata.
+
+Implemented artifacts:
+
+- `extension/plugin.json`
+- `commands/runner.js`
+- `commands/refresh.js`
+- `commands/announce.js`
+- `commands/last.js`
+- `commands/status.js`
+- `commands/clear-cache.js`
+- `commands/send-email-now.js`
+- `commands/setup.js`
+- `commands/weather-command.js`
+- `scripts/package-extension.js`
+- `scripts/check-extension-artifact.js`
+- `tests/extension-package.test.js`
+- `tests/extension-commands.test.js`
+
+Current packaging behavior:
+
+- `npm run package:plugin` is unchanged and still creates `release/weather-morning-report.openpet-plugin.zip` from `openpet-plugin/`;
+- `npm run package:extension` creates `release/weather-morning-report.openpet-extension.zip` from a staged package root;
+- the unified package root contains `plugin.json`, `config.schema.json`, `package.json`, `README.md`, `commands/`, `core/`, `rendering/`, `service/`, and `static/`;
+- the unified package excludes `legacy-assets/`, `docs/`, `tests/`, `release/`, `node_modules/`, `.git/`, local data directories, and `.env` files;
+- `npm run lint:extension` validates the unified zip locally until the official OpenPet unified validator exists.
+
+Current unified manifest entries:
+
+- shell commands: `refresh`, `announce`, `last`, `status`, `clear-cache`, `send-email-now`, and `setup`;
+- service: `weather-service`, command `node service/index.js`, health `http://127.0.0.1:8787/health`;
+- dashboard: `main`, URL `http://127.0.0.1:8787`;
+- manifest metadata records network hosts, local data environment variables, SMTP as a self-managed external account, and the service-owned schedule boundary.
+
+Current shell command contract:
+
+- command entries are package-relative Node scripts under `commands/`;
+- commands read optional JSON from stdin and emit one JSON object to stdout;
+- weather shell commands reuse the active JS core parser, provider, recommendation engine, and text renderer;
+- `refresh` and `announce` fetch/render reports and persist a command cache under `OPENPET_CACHE_DIR` or `OPENPET_DATA_DIR`;
+- `last`, `status`, and `clear-cache` operate on the persisted command cache;
+- invalid stdin JSON exits non-zero and redacts known secret values in stderr;
+- stdout JSON recursively redacts secret-looking input keys such as password, token, and secret;
+- Phase 7 `send-email-now` reports a service requirement unless `OPENPET_SERVICE_URL` is provided;
+- `setup` reports setup metadata instead of running dependency installation at runtime.
+
+Validation coverage:
+
+- unified manifest shape and entry lists are covered;
+- command stdin/env/JSON behavior is covered;
+- command stdout redaction for secret-looking input fields is covered;
+- unified zip inclusion and exclusion rules are covered;
+- local extension artifact validation checks command paths, service path, dashboard/health URL origin consistency, required active files, and forbidden package paths;
+- current `.openpet-plugin.zip` compatibility remains covered by the existing OpenPet validator tests.
+
+Production review fixes:
+
+- shell command entries now execute active weather command semantics instead of returning metadata-only placeholders;
+- command stdout JSON recursively redacts secret-looking input fields before writing results.
+
+Remaining Phase 8 alignment:
+
+- validate the unified package against the actual OpenPet extension model when available;
+- wire real OpenPet service lifecycle start/stop semantics;
+- expose dashboard/service health through OpenPet surfaces;
+- replace repository-local unified validation with the official validator once it exists.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:
