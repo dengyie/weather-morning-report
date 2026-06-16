@@ -1,16 +1,23 @@
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const fastify = require('fastify')
+const { renderEmailReport } = require('../rendering/email-renderer')
 const { ensureServicePaths } = require('./paths')
 const { validateBranding, validateDefaults, validateManualPreview, validateNotifications, validateRecipient, validateSchedule, validateSmtp } = require('./configuration/validation')
+const { defaultFetchReport, redactError, sendEmailNow } = require('./email/send-now')
+const { createUnavailableEmailTransport } = require('./email/transports')
 const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./storage/configuration-store')
 const { renderConfigurationPage } = require('./views/configuration')
 const { renderDashboardPage } = require('./views/dashboard')
+const { renderEmailPreviewPage } = require('./views/email-preview')
 const { renderLogsPage } = require('./views/logs')
 const { renderManualPreviewPage } = require('./views/manual-preview')
 const { version } = require('../package.json')
 
-const createServiceApp = ({ env = process.env } = {}) => {
+const findRecipient = (configuration, recipientId) => configuration.recipients
+  .find((recipient) => recipient.id === recipientId && !recipient.archivedAt)
+
+const createServiceApp = ({ env = process.env, emailTransport = createUnavailableEmailTransport(), fetchEmailReport = defaultFetchReport } = {}) => {
   const paths = ensureServicePaths(env)
   const app = fastify({ logger: false })
 
@@ -140,6 +147,53 @@ const createServiceApp = ({ env = process.env } = {}) => {
     }
     reply.type('text/html; charset=utf-8')
     return renderManualPreviewPage({ recipient: result.value.recipient, reportType: result.value.reportType })
+  })
+
+  app.get('/email/preview', async (request, reply) => {
+    const configuration = loadConfiguration(paths)
+    const recipientId = String(request.query?.recipient_id || '')
+    const reportType = String(request.query?.report_type || 'morning')
+    const recipient = findRecipient(configuration, recipientId)
+    if (!recipient) {
+      reply.code(400).type('text/html; charset=utf-8')
+      return renderConfigurationPage({ configuration, errors: ['收件人不存在'] })
+    }
+    try {
+      const report = await fetchEmailReport({ recipient, reportType, configuration })
+      const rendered = renderEmailReport({
+        snapshot: report.snapshot,
+        advice: report.advice,
+        recipient,
+        branding: configuration.branding,
+        reportType,
+        cached: report.cached
+      })
+      reply.type('text/html; charset=utf-8')
+      return renderEmailPreviewPage({ rendered, recipient })
+    } catch (error) {
+      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+    }
+  })
+
+  app.post('/email/send-now', async (request, reply) => {
+    try {
+      const result = await sendEmailNow({
+        paths,
+        recipientId: request.body?.recipient_id,
+        reportType: request.body?.report_type || 'morning',
+        transport: emailTransport,
+        fetchReport: fetchEmailReport,
+        secrets: [env.SMTP_PASSWORD]
+      })
+      return result.ok
+        ? reply.code(200).send(result)
+        : reply.code(502).send(result)
+    } catch (error) {
+      if (error.message === '收件人不存在') {
+        return reply.code(400).send({ ok: false, error: error.message })
+      }
+      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+    }
   })
 
   app.get('/static/app.css', async (_request, reply) => {
