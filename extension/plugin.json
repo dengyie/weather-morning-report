@@ -1,0 +1,43 @@
+{
+  "id": "weather-morning-report",
+  "name": "Weather Morning Report",
+  "version": "1.0.0",
+  "description": "Weather reports with pet announcements, Web dashboard, scheduled Email delivery, and template-based previews.",
+  "entries": {
+    "commands": [
+      { "id": "refresh", "title": "Refresh weather report", "command": "node commands/refresh.js", "cwd": "." },
+      { "id": "announce", "title": "Announce weather report", "command": "node commands/announce.js", "cwd": "." },
+      { "id": "last", "title": "Read last weather report", "command": "node commands/last.js", "cwd": "." },
+      { "id": "status", "title": "Show weather report status", "command": "node commands/status.js", "cwd": "." },
+      { "id": "clear-cache", "title": "Clear weather cache", "command": "node commands/clear-cache.js", "cwd": "." },
+      { "id": "send-email-now", "title": "Send Email now", "command": "node commands/send-email-now.js", "cwd": "." },
+      { "id": "setup", "title": "Setup Weather Morning Report", "command": "node commands/setup.js", "cwd": "." }
+    ],
+    "services": [
+      {
+        "id": "weather-service",
+        "name": "Weather Morning Report Service",
+        "command": "node service/index.js",
+        "cwd": ".",
+        "health": { "type": "http", "url": "http://127.0.0.1:8787/health" }
+      }
+    ],
+    "dashboards": [
+      { "id": "main", "title": "Weather Dashboard", "url": "http://127.0.0.1:8787" }
+    ]
+  },
+  "manifest": {
+    "network": ["wttr.in", "wttr.is"],
+    "dataLocations": ["OPENPET_DATA_DIR", "OPENPET_CACHE_DIR", "OPENPET_LOG_DIR"],
+    "externalAccounts": ["SMTP provider"],
+    "selfManagedSecrets": ["SMTP username", "SMTP password"],
+    "schedules": ["Morning weather Email schedule managed by the service."],
+    "notes": [
+      "The service binds to loopback by default.",
+      "SMTP credentials are managed by the service, not by the OpenPet command runner.",
+      "This manifest targets the upcoming unified OpenPet extension model and is validated locally until the official validator is available."
+    ]
+  },
+  "config": "config.schema.json",
+  "assets": ["static/**", "service/views/**", "README.md"]
+}

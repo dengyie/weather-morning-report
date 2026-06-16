@@ -14,6 +14,7 @@
 
 - Create `extension/plugin.json`: source unified extension manifest.
 - Create `commands/runner.js`: shared stdin/env JSON command helper.
+- Create `commands/weather-command.js`: shared shell weather command implementation using active core/rendering modules and command cache.
 - Create `commands/refresh.js`, `commands/announce.js`, `commands/last.js`, `commands/status.js`, `commands/clear-cache.js`: shell command shims for current weather command behavior.
 - Create `commands/send-email-now.js`: service-backed send-now shim.
 - Create `commands/setup.js`: setup metadata shim.
@@ -439,6 +440,7 @@ Expected before implementation: current command-plugin package tests pass.
 Add `node --check` entries for:
 
 - `commands/runner.js`
+- `commands/weather-command.js`
 - every `commands/*.js` shim;
 - `scripts/package-extension.js`;
 - `scripts/check-extension-artifact.js`.
@@ -491,10 +493,10 @@ npm ci
 npm test
 npm run build
 npm run lint
-npm run lint:extension
 npm run typecheck
 npm run package:plugin
 npm run package:extension
+npm run lint:extension
 git diff --check
 ```
 

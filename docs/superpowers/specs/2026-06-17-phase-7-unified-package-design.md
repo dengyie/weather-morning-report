@@ -71,6 +71,7 @@ Because the final OpenPet unified schema is not available yet, Phase 7 validatio
 
 Add command entry files under `commands/`:
 
+- `commands/weather-command.js`
 - `commands/refresh.js`
 - `commands/announce.js`
 - `commands/last.js`
@@ -85,10 +86,13 @@ Each command should:
 - merge stdin config with environment defaults where appropriate;
 - write JSON to stdout;
 - write fatal diagnostics to stderr without secrets;
+- redact secret-looking input keys before echoing data in stdout JSON;
 - exit `0` on successful command execution;
 - exit non-zero on invalid input or unsupported runtime failures.
 
 In Phase 7, command entries may delegate to existing command adapter/core behavior where practical. `send-email-now` may call the companion service HTTP endpoint when `OPENPET_SERVICE_URL` is provided and otherwise return a clear unavailable JSON response. `setup` should not run `npm install`; it should report setup metadata because package dependency installation remains outside the runtime command path.
+
+The first weather shell commands should reuse the active JS core and rendering modules. `refresh` and `announce` fetch and render a report, then persist a command cache under `OPENPET_CACHE_DIR` or `OPENPET_DATA_DIR`; `last`, `status`, and `clear-cache` operate on that command cache.
 
 ## Packaging Scripts
 
@@ -139,7 +143,7 @@ The record should include:
 
 Before Phase 7 is committed:
 
-1. Run `npm ci`, `npm test`, `npm run build`, `npm run lint`, `npm run lint:extension`, `npm run typecheck`, `npm run package:plugin`, `npm run package:extension`, and `git diff --check`.
+1. Run `npm ci`, `npm test`, `npm run build`, `npm run lint`, `npm run typecheck`, `npm run package:plugin`, `npm run package:extension`, `npm run lint:extension`, and `git diff --check`.
 2. Use `production-code-quality-review` on the Phase 7 diff.
 3. Fix confirmed findings.
 4. Update `docs/WEATHER_MORNING_REPORT_EXTENSION_MIGRATION.md` with the Phase 7 development record.
