@@ -1061,6 +1061,55 @@ Current packaging boundary:
 - Web dashboard service files are intentionally excluded from the current OpenPet command-plugin zip;
 - unified service/dashboard packaging remains deferred to the unified extension package phase.
 
+## 13.6 Phase 5 Development Record
+
+Phase 5 is complete with the first active Email delivery boundary for the Fastify companion service. This phase adds deterministic Email rendering, fake SMTP transport support for tests, send-now orchestration, and bounded delivery history without changing the current command-only OpenPet package.
+
+Implemented artifacts:
+
+- `rendering/email-template-options.js`
+- `rendering/email-renderer.js`
+- `service/email/transports.js`
+- `service/email/send-now.js`
+- `service/storage/delivery-history-store.js`
+- `service/views/email-preview.js`
+- expanded `tests/email-renderer.test.js`
+- expanded `tests/email-send-now.test.js`
+- expanded `tests/service-app.test.js`
+
+Current active Email behavior:
+
+- preserves the five legacy Email template options: `1` 暖调风格, `2` 行动风格, `3` 玻璃渐变, `4` 极简风格, and `5` 仪表风格;
+- renders Email subject, plain text fallback, HTML body, selected template id/label, and structured action summary;
+- supports Chinese and English labels;
+- preserves greeting visibility, footer text, accent color, and data source visibility;
+- renders key periods, current conditions, temperature range, wind, UV, umbrella, sunscreen, clothing, and risk level;
+- exposes `GET /email/preview` for local preview without sending Email;
+- exposes `POST /email/send-now` for immediate Email send through an injected transport;
+- stores bounded `delivery-history.json` records under `OPENPET_DATA_DIR`.
+
+Current secret and transport boundary:
+
+- raw SMTP passwords are not persisted in `configuration.json` or delivery history;
+- `createServiceApp` accepts an injected Email transport for tests and future runtime wiring;
+- the default service transport is an unavailable transport, so Phase 5 cannot accidentally send real Email without explicit wiring;
+- send failures record redacted error messages and avoid storing HTML bodies.
+
+Validation and safety coverage:
+
+- all five Email templates render valid HTML;
+- Email rendering escapes recipient, location, and footer values;
+- fake transport send-now records `sent` history without storing HTML bodies or secret values;
+- throwing transport records `failed` history with redacted error text;
+- `GET /email/preview` does not call the transport;
+- `POST /email/send-now` rejects unknown recipients with a safe 400 response.
+
+Current packaging boundary:
+
+- current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
+- Email service files are intentionally excluded from the current OpenPet command-plugin zip;
+- real SMTP lifecycle, scheduler queueing, retries, and unified service packaging remain deferred to later phases.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

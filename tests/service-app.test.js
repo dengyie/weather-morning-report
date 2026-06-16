@@ -5,8 +5,56 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 
 const { createServiceApp } = require('../service/app')
+const { loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const createEmailSnapshot = () => ({
+  schemaVersion: 1,
+  location: { name: 'Shanghai', query: 'Shanghai' },
+  source: { host: 'wttr.in', url: 'https://wttr.in/Shanghai?format=j1' },
+  fetchedAt: '2026-06-17T08:00:00.000Z',
+  current: {
+    condition: 'Clear',
+    description: 'Sunny',
+    temperatureC: 31,
+    feelsLikeC: 35,
+    humidityPercent: 72,
+    windSpeedKph: 12,
+    uvIndex: 8
+  },
+  daily: {
+    date: '2026-06-17',
+    minimumTemperatureC: 25,
+    maximumTemperatureC: 34,
+    uvIndex: 8
+  },
+  hourly: []
+})
+
+const createEmailAdvice = () => ({
+  schemaVersion: 1,
+  subject: '[紫外线很强，注意防晒] 天气早报',
+  focus: '午间紫外线较强',
+  umbrella: '今天通常不用带伞',
+  sunscreen: 'UV 8，强烈建议防晒、遮阳，长时间户外注意补涂',
+  clothing: '短袖或透气薄上衣搭配轻薄下装，注意通风散热',
+  closing: '午间阳光强，出门记得做好防晒。',
+  periods: [
+    { label: '早通勤', summary: '晴，降雨概率最高 0% ，体感约 29°C' },
+    { label: '午间', summary: '晴，降雨概率最高 0% ，体感约 35°C' }
+  ],
+  signals: {
+    highestRiskLevel: 0,
+    umbrellaLevel: 0,
+    sunscreenLevel: 3,
+    clothingLevel: 3,
+    targetPrecipitationLevel: 0,
+    thunderstorm: false,
+    strongWind: false,
+    dangerousHeat: false
+  }
+})
 
 const withTempServiceDirs = async (runner) => {
   const root = mkdtempSync(path.join(tmpdir(), 'wmr-service-'))
@@ -371,6 +419,193 @@ test('manual preview renders confirmation without sending email', async () => {
     assert.match(response.body, /手动发送预览/)
     assert.match(response.body, /确认并加入发送队列/)
     assert.doesNotMatch(response.body, /Email sent|SMTP|已发送/)
+  })
+})
+
+test('email preview route renders HTML without sending email', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const transport = {
+      sentMessages: [],
+      async send (message) {
+        this.sentMessages.push(message)
+        return { messageId: 'unexpected' }
+      }
+    }
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: transport,
+      fetchEmailReport: async () => ({
+        snapshot: createEmailSnapshot(),
+        advice: createEmailAdvice(),
+        cached: false
+      })
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=3&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/email/preview?recipient_id=recipient-1&report_type=morning' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.headers['content-type'], /text\/html/)
+    assert.match(response.body, /邮件预览/)
+    assert.match(response.body, /<iframe sandbox=""/)
+    assert.match(response.body, /data-email-template=&quot;3&quot;/)
+    assert.equal(transport.sentMessages.length, 0)
+  })
+})
+
+test('email preview route redacts unexpected report errors', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'must-not-leak-preview'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      fetchEmailReport: async () => {
+        throw new Error(`Preview failed with ${secret}`)
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=3&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/email/preview?recipient_id=recipient-1&report_type=morning' })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /\[redacted\]/)
+    assert.doesNotMatch(response.body, new RegExp(secret))
+  })
+})
+
+test('email send-now route sends through injected transport and records history', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const transport = {
+      sentMessages: [],
+      async send (message) {
+        this.sentMessages.push(message)
+        return { messageId: 'route-message-1' }
+      }
+    }
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'must-not-leak'
+      },
+      emailTransport: transport,
+      fetchEmailReport: async () => ({
+        snapshot: createEmailSnapshot(),
+        advice: createEmailAdvice(),
+        cached: false
+      })
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/send-now',
+      payload: 'recipient_id=recipient-1&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadDeliveryHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().status, 'sent')
+    assert.equal(response.json().messageId, 'route-message-1')
+    assert.equal(transport.sentMessages.length, 1)
+    assert.match(transport.sentMessages[0].html, /data-email-template="5"/)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].status, 'sent')
+    assert.doesNotMatch(JSON.stringify(history), /must-not-leak|<html/i)
+  })
+})
+
+test('email send-now route rejects unknown recipients safely', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      fetchEmailReport: async () => ({
+        snapshot: createEmailSnapshot(),
+        advice: createEmailAdvice(),
+        cached: false
+      })
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/send-now',
+      payload: 'recipient_id=missing&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /收件人不存在/)
+  })
+})
+
+test('email send-now route redacts unexpected report errors', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'must-not-leak'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      fetchEmailReport: async () => {
+        throw new Error(`Report generation failed with ${secret}`)
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/send-now',
+      payload: 'recipient_id=recipient-1&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /\[redacted\]/)
+    assert.doesNotMatch(response.body, new RegExp(secret))
   })
 })
 
