@@ -967,6 +967,45 @@ Remaining Phase 2 work before Web/Email service implementation:
 - split command cache/storage helpers if the service needs to reuse them;
 - add HTML/Email view-model tests before promoting legacy templates into active runtime.
 
+## 13.4 Phase 3 Development Record
+
+Phase 3 is complete with a Fastify companion service skeleton. This service is active repository code but is not included in the current command-only `.openpet-plugin.zip` package until OpenPet's unified extension lifecycle is ready.
+
+Implemented artifacts:
+
+- `service/app.js`
+- `service/index.js`
+- `service/paths.js`
+- `static/app.css`
+- `tests/service-app.test.js`
+- `npm run service:start`
+
+Current service behavior:
+
+- uses Fastify as the HTTP framework;
+- binds through the standalone `service/index.js` entry;
+- exposes `GET /health` with redacted service metadata and directory readiness flags, without returning local absolute paths;
+- creates `OPENPET_DATA_DIR`, `OPENPET_CACHE_DIR`, and `OPENPET_LOG_DIR` when provided;
+- serves a dashboard shell at `GET /`;
+- serves active CSS at `GET /static/app.css`;
+- writes startup/shutdown logs to `OPENPET_LOG_DIR/service.log` when started through `service/index.js`.
+
+Current packaging boundary:
+
+- current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
+- Fastify service files are intentionally excluded from the current OpenPet command-plugin zip;
+- unified service/dashboard packaging should wait for the new OpenPet extension manifest and validator.
+
+Validation record:
+
+- production code quality review tightened `/health` so service paths are not exposed in HTTP responses;
+- `npm test`;
+- `npm run typecheck`;
+- `npm run build`;
+- `npm run lint`;
+- `npm run package:plugin`;
+- `git diff --check`.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

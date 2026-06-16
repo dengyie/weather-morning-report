@@ -27,18 +27,18 @@
 | 缓存 | `ctx.storage` in `src/commands.js` | 已迁移为小型 scoped storage |
 | 命令入口 | `src/activate.js`、`src/commands.js` | 已迁移 |
 
-### 2.2 已删除且不迁移的能力
+### 2.2 已删除且不进入当前 command-plugin 包的能力
 
 | 删除范围 | 删除原因 | 后续替代 |
 | --- | --- | --- |
-| SMTP / 邮件投递 | OpenPet 插件不是邮件投递服务 | `ctx.pet.say()` 与命令返回值 |
-| FastAPI / Web UI / HTML templates / static assets | OpenPet 配置由 Control Center schema 承载 | `config.schema.json` |
+| SMTP / 邮件投递 | 当前 OpenPet command-plugin 不是邮件投递服务 | Fastify companion service 后续承载 |
+| FastAPI / 旧 Web UI / HTML templates / static assets | 旧 Python Web 栈不再作为当前插件包运行 | Fastify companion service + 迁移后的 active templates/static |
 | SQLite / SQLAlchemy / Alembic | 插件没有数据库迁移生命周期 | `ctx.storage` 小对象 |
 | jobs / worker / 后台调度 | OpenPet 当前是 command-style 短生命周期插件 | 用户或宿主触发命令 |
 | Docker / compose / systemd | 插件通过 Control Center 安装 | `.openpet-plugin.zip` |
 | Python package / CLI 发布链路 | 目标产物不再是 Python 包 | npm scripts + OpenPet validation |
 
-这些删除是产品形态切换，不是暂时隐藏。后续不应恢复双栈维护。
+这些删除是产品形态切换，不是暂时隐藏。后续不应恢复 Python 双栈维护；Web/Email/调度能力应在 JS companion service 和统一 extension package 中继续生长。
 
 ## 3. 当前仓库结构
 
@@ -67,9 +67,15 @@ weather-morning-report/
 │   └── period-schedule.js
 ├── rendering/
 │   └── text-renderer.js
+├── service/
+│   ├── app.js
+│   ├── index.js
+│   └── paths.js
 ├── src/
 │   ├── activate.js
 │   └── commands.js
+├── static/
+│   └── app.css
 ├── scripts/
 │   ├── build-plugin.js
 │   ├── check-plugin-artifact.js
@@ -93,7 +99,9 @@ weather-morning-report/
 
 - `core/`：framework-neutral 天气、配置、provider、parser、推荐与时段逻辑。
 - `rendering/`：framework-neutral 文案/视图模型渲染逻辑。
+- `service/`：Fastify companion service skeleton，当前不进入 command-plugin zip。
 - `src/`：OpenPet command adapter，只保留宿主 `ctx`、storage、pet say、命令编排。
+- `static/`：companion dashboard 静态资源，当前不进入 command-plugin zip。
 - `openpet-plugin/`：OpenPet 可安装包根目录，必须始终能被 OpenPet `validate:plugin` 检查。
 - `openpet-plugin/index.js`：构建产物，必须为单文件，不依赖 runtime `require`。
 - `scripts/`：构建、打包、产物检查。
