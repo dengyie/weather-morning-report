@@ -999,6 +999,7 @@ Current packaging boundary:
 Validation record:
 
 - production code quality review tightened `/health` so service paths are not exposed in HTTP responses;
+- GitHub Actions installs plugin dependencies with `npm ci` before running service-aware tests, build, lint, typecheck, and packaging;
 - `npm test`;
 - `npm run typecheck`;
 - `npm run build`;

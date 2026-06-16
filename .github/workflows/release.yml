@@ -26,7 +26,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: weather-morning-report/package.json
+          cache-dependency-path: weather-morning-report/package-lock.json
+      - name: Install plugin dependencies
+        run: npm ci
+        working-directory: weather-morning-report
       - name: Install OpenPet dependencies
         run: npm install
         working-directory: OpenPet
