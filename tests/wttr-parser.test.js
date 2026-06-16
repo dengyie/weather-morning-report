@@ -82,3 +82,55 @@ test('clamps unsafe numeric values and tolerates missing hourly data', () => {
   assert.equal(snapshot.daily.uvIndex, 0)
   assert.deepEqual(snapshot.hourly, [])
 })
+
+test('treats blank and null numeric fields as missing instead of zero', () => {
+  const snapshot = normalizeWttrPayload({
+    current_condition: [{
+      temp_C: '',
+      FeelsLikeC: null,
+      humidity: '',
+      windspeedKmph: null,
+      uvIndex: ''
+    }],
+    weather: [{
+      date: '2026-06-16',
+      mintempC: '',
+      maxtempC: null,
+      uvIndex: '',
+      hourly: [{
+        time: '',
+        tempC: '',
+        FeelsLikeC: null,
+        chanceofrain: '',
+        precipMM: null,
+        chanceofthunder: '',
+        humidity: '',
+        windspeedKmph: null,
+        uvIndex: ''
+      }]
+    }]
+  }, {
+    locationName: 'Shanghai',
+    locationQuery: 'Shanghai',
+    sourceHost: 'wttr.in',
+    fetchedAt: '2026-06-16T00:00:00.000Z'
+  })
+
+  assert.equal(snapshot.current.temperatureC, null)
+  assert.equal(snapshot.current.feelsLikeC, null)
+  assert.equal(snapshot.current.humidityPercent, null)
+  assert.equal(snapshot.current.windSpeedKph, 0)
+  assert.equal(snapshot.current.uvIndex, 0)
+  assert.equal(snapshot.daily.minimumTemperatureC, null)
+  assert.equal(snapshot.daily.maximumTemperatureC, null)
+  assert.equal(snapshot.daily.uvIndex, 0)
+  assert.equal(snapshot.hourly[0].forecastAtHour, 0)
+  assert.equal(snapshot.hourly[0].temperatureC, null)
+  assert.equal(snapshot.hourly[0].feelsLikeC, null)
+  assert.equal(snapshot.hourly[0].precipitationProbabilityPercent, 0)
+  assert.equal(snapshot.hourly[0].precipitationMm, 0)
+  assert.equal(snapshot.hourly[0].thunderProbabilityPercent, 0)
+  assert.equal(snapshot.hourly[0].humidityPercent, null)
+  assert.equal(snapshot.hourly[0].windSpeedKph, 0)
+  assert.equal(snapshot.hourly[0].uvIndex, 0)
+})

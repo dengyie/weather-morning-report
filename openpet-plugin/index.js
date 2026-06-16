@@ -37,6 +37,8 @@ const normalizeConfig = (rawConfig = {}) => {
 const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), maximum)
 
 const toFiniteNumber = (value, fallback = null) => {
+  if (value == null) return fallback
+  if (typeof value === 'string' && value.trim() === '') return fallback
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
 }
