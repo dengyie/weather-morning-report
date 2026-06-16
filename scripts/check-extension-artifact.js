@@ -37,6 +37,7 @@ for (const file of [
   'config.schema.json',
   'package.json',
   'README.md',
+  'compat/openpet-main.js',
   'commands/runner.js',
   'commands/weather-command.js',
   'core/weather-provider.js',
@@ -47,6 +48,13 @@ for (const file of [
 ]) {
   requireFile(file)
 }
+
+const main = String(manifest.main || '')
+if (!main) fail('Manifest must declare a compatibility main file')
+if (path.isAbsolute(main) || main.includes('..')) {
+  fail('Manifest main must be package-relative')
+}
+requireFile(main)
 
 for (const entry of manifest.entries?.commands || []) {
   const command = String(entry.command || '')

@@ -16,7 +16,10 @@ test('unified extension manifest declares commands service dashboard and data bo
   const manifest = loadManifest()
 
   assert.equal(manifest.id, 'weather-morning-report')
+  assert.equal(manifest.main, 'compat/openpet-main.js')
   assert.equal(manifest.config, 'config.schema.json')
+  assert.deepEqual(manifest.permissions, ['network', 'pet:say', 'storage'])
+  assert.deepEqual(manifest.network.allowlist, ['wttr.in', 'wttr.is'])
   assert.deepEqual(manifest.manifest.network, ['wttr.in', 'wttr.is'])
   assert.deepEqual(manifest.entries.commands.map((entry) => entry.id), [
     'refresh',
@@ -50,6 +53,7 @@ test('package:extension creates a unified extension zip with active runtime file
   assert.ok(listing.includes('config.schema.json'))
   assert.ok(listing.includes('package.json'))
   assert.ok(listing.includes('README.md'))
+  assert.ok(listing.includes('compat/openpet-main.js'))
   assert.ok(listing.includes('commands/status.js'))
   assert.ok(listing.includes('commands/send-email-now.js'))
   assert.ok(listing.includes('commands/weather-command.js'))

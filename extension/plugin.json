@@ -3,6 +3,11 @@
   "name": "Weather Morning Report",
   "version": "1.0.0",
   "description": "Weather reports with pet announcements, Web dashboard, scheduled Email delivery, and template-based previews.",
+  "main": "compat/openpet-main.js",
+  "permissions": ["network", "pet:say", "storage"],
+  "network": {
+    "allowlist": ["wttr.in", "wttr.is"]
+  },
   "entries": {
     "commands": [
       { "id": "refresh", "title": "Refresh weather report", "command": "node commands/refresh.js", "cwd": "." },
