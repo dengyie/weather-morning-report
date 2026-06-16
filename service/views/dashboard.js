@@ -7,7 +7,7 @@ const renderDashboardPage = ({ configuration }) => renderPage({
     <p class="eyebrow">OpenPet Companion Service</p>
     <h1>Weather Morning Report</h1>
     <p>Fastify service is ready. Web dashboard, Email preview, SMTP delivery, and scheduler controls will be promoted here phase by phase.</p>
-    <div class="button-row"><a class="button-link" href="/configuration">管理配置</a><a class="button-link secondary" href="/logs">查看日志</a></div>
+    <div class="button-row"><a class="button-link" href="/configuration">管理配置</a><a class="button-link secondary" href="/scheduler">查看调度</a><a class="button-link secondary" href="/logs">查看日志</a></div>
   </section>
   <section class="grid" aria-label="服务状态">
     <article class="card"><p class="eyebrow">Recipients</p><p class="metric-value">${configuration.recipients.length}</p></article>

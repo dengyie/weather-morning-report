@@ -23,6 +23,7 @@ const renderPage = ({ title, activePath = '/', body }) => `<!doctype html>
       <nav class="nav-links" aria-label="主导航">
         <a href="/"${activePath === '/' ? ' aria-current="page"' : ''}>仪表盘</a>
         <a href="/configuration"${activePath === '/configuration' ? ' aria-current="page"' : ''}>配置中心</a>
+        <a href="/scheduler"${activePath === '/scheduler' ? ' aria-current="page"' : ''}>调度</a>
         <a href="/logs"${activePath === '/logs' ? ' aria-current="page"' : ''}>日志</a>
       </nav>
     </header>
