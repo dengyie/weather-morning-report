@@ -1110,6 +1110,59 @@ Current packaging boundary:
 - Email service files are intentionally excluded from the current OpenPet command-plugin zip;
 - real SMTP lifecycle, scheduler queueing, retries, and unified service packaging remain deferred to later phases.
 
+## 13.7 Phase 6 Development Record
+
+Phase 6 is complete with a JSON-backed service-owned scheduler queue. This phase adds deterministic due-job enqueueing, queue deduplication, worker/job leases, bounded retry behavior, uncertain delivery safety, and dashboard-visible queue status without starting a long-running daemon loop or changing the command-only OpenPet package.
+
+Implemented artifacts:
+
+- `service/scheduler/time.js`
+- `service/scheduler/state-store.js`
+- `service/scheduler/queue.js`
+- `service/views/scheduler.js`
+- expanded `tests/scheduler-queue.test.js`
+- expanded `tests/service-app.test.js`
+
+Current scheduler behavior:
+
+- stores scheduler state in `scheduler-state.json` under `OPENPET_DATA_DIR`;
+- enqueues automatic jobs when a recipient's timezone-local minute matches a configured schedule;
+- skips recipients with invalid timezone strings instead of failing the enqueue route;
+- suppresses duplicate automatic jobs by recipient id, schedule id, report type, and local report date;
+- does not backfill missed minutes in Phase 6;
+- supports worker leases with active-worker blocking and expired takeover;
+- supports job leases with recovery before delivery begins;
+- applies bounded retry delays of 5, 15, 30, and 60 minutes before marking a job failed;
+- marks expired `dispatching` jobs as `delivery_result_unknown` and prevents automatic re-claiming;
+- exposes `GET /scheduler` and `POST /scheduler/enqueue-due`;
+- dashboard now links to the scheduler status page.
+
+Current safety and storage boundary:
+
+- scheduler state does not store Email HTML bodies or SMTP secrets;
+- scheduler failure diagnostics redact explicit secrets and password query values before persistence;
+- Phase 6 uses explicit route-triggered due-job enqueueing instead of a background daemon;
+- real worker processing and scheduler lifecycle integration remain deferred until the unified extension package phase can define service start/stop behavior.
+
+Validation and safety coverage:
+
+- automatic jobs enqueue once per local date and schedule minute;
+- duplicate jobs are suppressed;
+- invalid recipient timezones do not crash due-job enqueueing;
+- missed minutes are not backfilled;
+- worker leases and expired takeover are covered;
+- expired running job leases can be recovered before delivery starts;
+- retry delays are bounded and exhaustion marks jobs failed;
+- uncertain delivery state avoids unsafe duplicate send;
+- scheduler failure messages are redacted before they are stored;
+- scheduler dashboard renders queue and worker status.
+
+Current packaging boundary:
+
+- current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
+- scheduler service files are intentionally excluded from the current OpenPet command-plugin zip;
+- unified service/dashboard/scheduler packaging remains deferred to Phase 7.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

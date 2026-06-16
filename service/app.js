@@ -12,12 +12,14 @@ const { renderDashboardPage } = require('./views/dashboard')
 const { renderEmailPreviewPage } = require('./views/email-preview')
 const { renderLogsPage } = require('./views/logs')
 const { renderManualPreviewPage } = require('./views/manual-preview')
+const { renderSchedulerPage } = require('./views/scheduler')
+const { enqueueDueJobs, queueStatus } = require('./scheduler/queue')
 const { version } = require('../package.json')
 
 const findRecipient = (configuration, recipientId) => configuration.recipients
   .find((recipient) => recipient.id === recipientId && !recipient.archivedAt)
 
-const createServiceApp = ({ env = process.env, emailTransport = createUnavailableEmailTransport(), fetchEmailReport = defaultFetchReport } = {}) => {
+const createServiceApp = ({ env = process.env, emailTransport = createUnavailableEmailTransport(), fetchEmailReport = defaultFetchReport, schedulerNow = () => new Date() } = {}) => {
   const paths = ensureServicePaths(env)
   const app = fastify({ logger: false })
 
@@ -53,6 +55,22 @@ const createServiceApp = ({ env = process.env, emailTransport = createUnavailabl
     const lines = readRecentLogs(paths, 50)
     reply.type('text/html; charset=utf-8')
     return renderLogsPage({ lines })
+  })
+
+  app.get('/scheduler', async (_request, reply) => {
+    const status = queueStatus(paths, { now: schedulerNow() })
+    reply.type('text/html; charset=utf-8')
+    return renderSchedulerPage({ status })
+  })
+
+  app.post('/scheduler/enqueue-due', async (_request, reply) => {
+    const now = schedulerNow()
+    const created = enqueueDueJobs(paths, { now })
+    return reply.code(200).send({
+      ok: true,
+      created,
+      status: queueStatus(paths, { now })
+    })
   })
 
   app.post('/configuration/recipients', async (request, reply) => {

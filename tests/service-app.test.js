@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 
 const { createServiceApp } = require('../service/app')
 const { loadDeliveryHistory } = require('../service/storage/delivery-history-store')
+const { loadSchedulerState } = require('../service/scheduler/state-store')
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -210,6 +211,7 @@ test('dashboard links to configuration logs and active CSS', async () => {
     assert.equal(response.statusCode, 200)
     assert.match(response.body, /href="\/configuration"/)
     assert.match(response.body, /href="\/logs"/)
+    assert.match(response.body, /href="\/scheduler"/)
     assert.match(response.body, /href="\/static\/app\.css"/)
   })
 })
@@ -606,6 +608,62 @@ test('email send-now route redacts unexpected report errors', async () => {
     assert.equal(response.json().ok, false)
     assert.match(response.json().error, /\[redacted\]/)
     assert.doesNotMatch(response.body, new RegExp(secret))
+  })
+})
+
+test('scheduler page renders queue and worker status', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/scheduler' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.body, /调度队列/)
+    assert.match(response.body, /Pending/)
+    assert.match(response.body, /Worker inactive/)
+  })
+})
+
+test('scheduler enqueue-due route creates due automatic jobs', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      schedulerNow: () => new Date('2026-06-08T00:30:00.000Z')
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Alice&email=alice%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/schedules',
+      payload: 'recipient_id=recipient-1&local_send_time=08%3A30&report_type=morning&send_policy=always&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({ method: 'POST', url: '/scheduler/enqueue-due' })
+    const duplicate = await app.inject({ method: 'POST', url: '/scheduler/enqueue-due' })
+    const state = loadSchedulerState({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().created, 1)
+    assert.equal(duplicate.json().created, 0)
+    assert.equal(state.jobs.length, 1)
+    assert.equal(state.jobs[0].dedupeKey, 'automatic:recipient-1:schedule-1:morning:2026-06-08')
   })
 })
 
