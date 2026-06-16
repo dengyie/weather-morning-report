@@ -37,6 +37,8 @@ This repository is currently an OpenPet JavaScript plugin project, with a new de
 - Framework-neutral weather modules live in `core/`.
 - Framework-neutral text rendering lives in `rendering/`.
 - OpenPet command adapter modules live in `src/`.
+- Fastify companion service skeleton lives in `service/`.
+- Active companion dashboard CSS lives in `static/`.
 - Installable plugin root lives in `openpet-plugin/`.
 - Bundled OpenPet entry is `openpet-plugin/index.js`.
 - Release package is generated at `release/weather-morning-report.openpet-plugin.zip`.
