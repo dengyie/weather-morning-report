@@ -890,6 +890,31 @@ Done when:
 - service health appears in OpenPet;
 - command logs and result JSON appear in OpenPet.
 
+### Phase 9: OpenPet Runtime Smoke
+
+- Add automated runtime smoke evidence against sibling OpenPet.
+- Verify dashboard open, service lifecycle, health checks, command execution, and logs.
+
+Done when:
+
+- smoke script packages the unified extension and loads it through OpenPet runtime service APIs;
+- dashboard `main` opens through OpenPet;
+- service `weather-service` starts, returns healthy, and stops;
+- command `status` runs through OpenPet command execution.
+
+### Phase 10: Setup And Cleanup Lifecycle
+
+- Declare setup in OpenPet's setup lifecycle surface.
+- Add explicit cleanup command for service-owned local files.
+- Keep cleanup dry-run by default.
+
+Done when:
+
+- `entries.setup` declares setup without running install-time mutations;
+- cleanup reports planned files by default;
+- confirmed cleanup deletes only known Weather service-owned files;
+- package validation covers lifecycle command paths.
+
 ## 13.1 Recommended Implementation Order
 
 The safest development order is:
@@ -1309,6 +1334,55 @@ Remaining runtime evidence:
 
 - full Electron Control Center visual smoke remains outside this repository-owned phase;
 - direct shell spawning for `entries.commands` remains an OpenPet host capability target, while the compatibility `main` keeps current runtime command execution working.
+
+## 13.12 Phase 10 Planned Setup And Cleanup Lifecycle
+
+Phase 10 should complete the repository-owned setup and cleanup lifecycle declarations for the unified extension package.
+
+Planned behavior:
+
+- setup should be declared in `entries.setup` for OpenPet's setup lifecycle UI and status tracking;
+- setup should remain metadata-only and must not silently run dependency installation during package install;
+- cleanup should be explicit, dry-run by default, and limited to known service-owned files under `OPENPET_DATA_DIR`, `OPENPET_CACHE_DIR`, and `OPENPET_LOG_DIR`;
+- cleanup should not claim to remove SMTP provider data, external accounts, cloud data, arbitrary directories, or third-party-managed secrets.
+
+## 13.13 Phase 10 Development Record
+
+Phase 10 adds explicit setup lifecycle declaration and conservative cleanup behavior for service-owned local files.
+
+Implemented artifacts:
+
+- `commands/cleanup.js`
+- `docs/superpowers/specs/2026-06-17-phase-10-setup-cleanup-lifecycle-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-10-setup-cleanup-lifecycle.md`
+- updated `extension/plugin.json`
+- updated `scripts/check-extension-artifact.js`
+
+Lifecycle behavior:
+
+- `entries.setup` now declares `setup` with `node commands/setup.js` for OpenPet's current setup lifecycle surface;
+- `entries.commands` keeps `setup` for compatibility and adds `cleanup` as an explicit user-run command;
+- `setup` remains metadata-only and does not install dependencies or mutate package state;
+- `cleanup` defaults to dry-run and reports planned service-owned files;
+- `cleanup` deletes files only when stdin includes `{ "confirm": true }`;
+- confirmed cleanup is limited to `configuration.json`, `delivery-history.json`, `scheduler-state.json`, `weather-command-cache.json`, and `service.log`;
+- command cache cleanup follows command runtime storage behavior: `OPENPET_CACHE_DIR/weather-command-cache.json` when configured, otherwise `OPENPET_DATA_DIR/weather-command-cache.json`.
+- the compatibility `main` command bundle also exposes `cleanup` so current OpenPet runtimes that execute through `compat/openpet-main.js` do not surface a missing command; that compatibility handler is dry-run by default and only clears OpenPet command-plugin storage when confirmed.
+
+Validation coverage:
+
+- command tests cover cleanup dry-run and confirmed deletion behavior;
+- cleanup tests assert unrelated files in data/cache/log directories are preserved;
+- cleanup tests assert the `OPENPET_DATA_DIR` command-cache fallback is removed when no cache directory is configured;
+- compatibility command tests assert the bundled OpenPet command surface includes cleanup;
+- package tests cover manifest setup/cleanup declarations and packaged `commands/cleanup.js`;
+- local extension artifact validation now checks setup lifecycle entry paths are safe package-relative node commands.
+
+Remaining lifecycle work:
+
+- OpenPet does not yet expose a dedicated `entries.cleanup` lifecycle runner, so cleanup remains a normal command entry;
+- uninstall automation and third-party account cleanup remain outside this repository-owned phase;
+- dependency installation remains the host/development setup responsibility, not an install-time side effect.
 
 ## 14. Deliberate Non-Goals
 

@@ -67,6 +67,17 @@ for (const entry of manifest.entries?.commands || []) {
   requireFile(commandFile)
 }
 
+for (const entry of manifest.entries?.setup || []) {
+  const command = String(entry.command || '')
+  const match = /^node ([^\s]+)$/.exec(command)
+  if (!match) fail(`Setup entry must use "node <relative-file>": ${entry.id}`)
+  const commandFile = match[1]
+  if (path.isAbsolute(commandFile) || commandFile.includes('..')) {
+    fail(`Setup entry must be package-relative: ${entry.id}`)
+  }
+  requireFile(commandFile)
+}
+
 const service = manifest.entries?.services?.[0]
 if (!service) fail('Manifest must declare a service entry')
 const serviceMatch = /^node ([^\s]+)$/.exec(String(service.command || ''))

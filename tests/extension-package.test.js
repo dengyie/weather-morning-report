@@ -28,7 +28,11 @@ test('unified extension manifest declares commands service dashboard and data bo
     'status',
     'clear-cache',
     'send-email-now',
-    'setup'
+    'setup',
+    'cleanup'
+  ])
+  assert.deepEqual(manifest.entries.setup, [
+    { id: 'setup', title: 'Setup Weather Morning Report', command: 'node commands/setup.js', cwd: '.' }
   ])
   assert.equal(manifest.entries.services[0].command, 'node service/index.js')
   assert.equal(manifest.entries.services[0].health.url, 'http://127.0.0.1:8787/health')
@@ -56,6 +60,7 @@ test('package:extension creates a unified extension zip with active runtime file
   assert.ok(listing.includes('compat/openpet-main.js'))
   assert.ok(listing.includes('commands/status.js'))
   assert.ok(listing.includes('commands/send-email-now.js'))
+  assert.ok(listing.includes('commands/cleanup.js'))
   assert.ok(listing.includes('commands/weather-command.js'))
   assert.ok(listing.includes('core/weather-provider.js'))
   assert.ok(listing.includes('rendering/email-renderer.js'))

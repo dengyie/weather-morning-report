@@ -594,6 +594,21 @@ const createCommands = (ctx) => {
     'clear-cache': async () => {
       await ctx.storage.clear()
       return { ok: true, cleared: true }
+    },
+    cleanup: async (input = {}) => {
+      const confirmed = input.confirm === true
+      if (confirmed) {
+        await ctx.storage.clear()
+      }
+      return {
+        ok: true,
+        dryRun: !confirmed,
+        clearedStorage: confirmed,
+        cleanupSurface: 'compat-main',
+        message: confirmed
+          ? 'Compatibility cleanup cleared OpenPet command-plugin storage. Service-owned file cleanup is handled by the unified shell cleanup command.'
+          : 'Compatibility cleanup dry run. Re-run with { confirm: true } to clear OpenPet command-plugin storage.'
+      }
     }
   }
 }
