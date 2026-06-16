@@ -16,11 +16,11 @@
 - Create: `tests/openpet-extension-validate.test.js`
 - Modify: `extension/plugin.json`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Create a test that runs `npm run package:extension`, then validates `release/weather-morning-report.openpet-extension.zip` through `../OpenPet`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -30,7 +30,7 @@ npm test -- tests/openpet-extension-validate.test.js
 
 Expected: fail with `Plugin asset file does not exist` while assets still use glob patterns.
 
-- [ ] **Step 3: Align manifest assets**
+- [x] **Step 3: Align manifest assets**
 
 Change `extension/plugin.json` assets from glob patterns to literal paths:
 
@@ -38,7 +38,7 @@ Change `extension/plugin.json` assets from glob patterns to literal paths:
 "assets": ["static", "service/views", "README.md"]
 ```
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run:
 
@@ -56,11 +56,11 @@ Expected: OpenPet validator and local extension validator pass.
 - Modify: `docs/WEATHER_MORNING_REPORT_EXTENSION_MIGRATION.md`
 - Review all Phase 8 files.
 
-- [ ] **Step 1: Add Phase 8 development record**
+- [x] **Step 1: Add Phase 8 development record**
 
 Append `## 13.9 Phase 8 Development Record` after Phase 7. Include OpenPet validator pass, literal assets alignment, retained local validator, and runtime smoke evidence gaps.
 
-- [ ] **Step 2: Run production review**
+- [x] **Step 2: Run production review**
 
 Run:
 
@@ -70,7 +70,7 @@ python3 /Users/mango/.agents/skills/production-code-quality-review/scripts/colle
 
 Fix confirmed findings with tests first.
 
-- [ ] **Step 3: Run full verification**
+- [x] **Step 3: Run full verification**
 
 Run:
 
@@ -88,7 +88,7 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Run:
 

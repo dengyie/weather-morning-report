@@ -1255,6 +1255,7 @@ Validation coverage:
 - the unified extension zip passes the current OpenPet package validator;
 - current command-plugin `.openpet-plugin.zip` validator coverage remains unchanged;
 - local unified artifact validation still checks package-specific exclusions and entry path consistency.
+- CI keeps this integration tolerant of OpenPet `main` until unified extension schema support lands there; old `main` validators that only accept command-plugin manifests are reported as an explicit skip, while real extension validation failures still fail the test.
 
 Runtime evidence still required after repository alignment:
 
