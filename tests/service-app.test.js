@@ -1,4 +1,4 @@
-const { existsSync, mkdtempSync, rmSync } = require('node:fs')
+const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 const { test } = require('node:test')
@@ -73,5 +73,393 @@ test('Fastify service serves the dashboard shell and active CSS', async () => {
     assert.equal(css.statusCode, 200)
     assert.match(css.headers['content-type'], /text\/css/)
     assert.match(css.body, /:root/)
+  })
+})
+
+test('configuration page creates and renders service-owned default configuration', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.headers['content-type'], /text\/html/)
+    assert.match(response.body, /配置中心/)
+    assert.match(response.body, /收件人工作台/)
+    assert.doesNotMatch(response.body, /\{[%{]/)
+    assert.equal(existsSync(path.join(dataDir, 'configuration.json')), true)
+  })
+})
+
+test('configuration page exposes editable forms for each configuration domain', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    for (const action of [
+      '/configuration/defaults',
+      '/configuration/recipients',
+      '/configuration/schedules',
+      '/configuration/smtp',
+      '/configuration/branding',
+      '/configuration/notifications'
+    ]) {
+      assert.match(response.body, new RegExp(`action="${escapeRegExp(action)}"`))
+    }
+    assert.match(response.body, /name="local_send_time"/)
+    assert.match(response.body, /name="accent_color"/)
+    assert.match(response.body, /name="retention_days"/)
+  })
+})
+
+test('logs page renders an empty state when the log file is missing', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/logs' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.body, /暂无服务日志/)
+  })
+})
+
+test('dashboard links to configuration logs and active CSS', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/' })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.body, /href="\/configuration"/)
+    assert.match(response.body, /href="\/logs"/)
+    assert.match(response.body, /href="\/static\/app\.css"/)
+  })
+})
+
+test('configuration page escapes user-controlled values', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=%3Cscript%3Ealert(1)%3C%2Fscript%3E&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const response = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.doesNotMatch(response.body, /<script>alert/)
+    assert.match(response.body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/)
+  })
+})
+
+test('recipient form rejects invalid email and preserves safe form values', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=not-an-email&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /邮箱格式无效/)
+    assert.match(response.body, /value="Mango"/)
+  })
+})
+
+test('recipient form accepts a valid recipient and persists it', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(response.headers.location, '/configuration')
+    assert.equal(configuration.recipients.length, 1)
+    assert.equal(configuration.recipients[0].email, 'mango@example.com')
+  })
+})
+
+test('schedule form rejects unknown recipient ids', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/schedules',
+      payload: 'recipient_id=missing&local_send_time=08%3A30&report_type=morning&send_policy=always&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /收件人不存在/)
+  })
+})
+
+test('schedule form rejects impossible local times', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/schedules',
+      payload: 'recipient_id=recipient-1&local_send_time=99%3A99&report_type=morning&send_policy=always&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /发送时间必须是 HH:MM 格式/)
+  })
+})
+
+test('smtp form never echoes submitted password', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(configuration.smtp.passwordSaved, true)
+    assert.doesNotMatch(JSON.stringify(configuration), /super-secret/)
+    assert.doesNotMatch(page.body, /super-secret/)
+    assert.match(page.body, /已保存，留空保持不变/)
+  })
+})
+
+test('branding form rejects invalid accent color', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/branding',
+      payload: 'report_title=Weather&accent_color=blue&footer_text=Footer&greeting_visible=on&data_source_visible=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /强调色必须是 #RRGGBB 格式/)
+  })
+})
+
+test('manual preview renders confirmation without sending email', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=1&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/manual/preview',
+      payload: 'recipient_id=recipient-1&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.body, /手动发送预览/)
+    assert.match(response.body, /确认并加入发送队列/)
+    assert.doesNotMatch(response.body, /Email sent|SMTP|已发送/)
+  })
+})
+
+test('defaults form rejects invalid report type', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/defaults',
+      payload: 'location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&local_send_time=08%3A30&report_type=night&send_policy=always&schedule_enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /报告类型无效/)
+  })
+})
+
+test('defaults form rejects impossible local times', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/defaults',
+      payload: 'location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&local_send_time=24%3A00&report_type=morning&send_policy=always&schedule_enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /默认发送时间必须是 HH:MM 格式/)
+  })
+})
+
+test('notifications form rejects negative retention days', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/notifications',
+      payload: 'admin_email=admin%40example.com&webhook_url=&retention_days=-1&alert_cooldown_minutes=60&webhook_enabled=on&secret_key_backup_confirmed=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /历史保留天数必须是非负整数/)
+  })
+})
+
+test('empty form submissions return validation errors instead of server errors', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/notifications'
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.match(response.body, /历史保留天数必须是非负整数/)
   })
 })

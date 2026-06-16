@@ -1007,6 +1007,60 @@ Validation record:
 - `npm run package:plugin`;
 - `git diff --check`.
 
+## 13.5 Phase 4 Development Record
+
+Phase 4 is complete with a conservative Fastify Web dashboard migration. The implementation preserves the recovered dashboard, configuration workbench, manual preview, and logs workflow shape without reintroducing Python or Jinja runtime dependencies.
+
+Implemented artifacts:
+
+- `service/configuration/defaults.js`
+- `service/configuration/validation.js`
+- `service/storage/configuration-store.js`
+- `service/views/layout.js`
+- `service/views/dashboard.js`
+- `service/views/configuration.js`
+- `service/views/manual-preview.js`
+- `service/views/logs.js`
+- expanded `tests/service-app.test.js`
+
+Current active routes:
+
+- `GET /` dashboard home/status with manual preview entry, configuration/log links, and active CSS;
+- `GET /configuration` editable configuration workbench using service-owned JSON state;
+- `POST /configuration/defaults` default location, schedule, language, report type, and send policy save;
+- `POST /configuration/recipients` recipient create/update with validation;
+- `POST /configuration/schedules` schedule create/update with recipient validation;
+- `POST /configuration/smtp` SMTP metadata save with password redaction;
+- `POST /configuration/branding` branding save with accent color validation;
+- `POST /configuration/notifications` notification and retention save with non-negative integer validation;
+- `POST /manual/preview` local preview confirmation without Email delivery;
+- `GET /logs` recent service log view with a safe empty state.
+
+Current storage boundary:
+
+- Phase 4 stores `configuration.json` under `OPENPET_DATA_DIR`;
+- SMTP passwords are not persisted as raw values in Phase 4; only `passwordSaved` metadata is stored;
+- `service.log` remains under `OPENPET_LOG_DIR`;
+- SQLite remains deferred until Email delivery, scheduler, retries, and delivery history need transactional behavior.
+
+Validation and safety coverage:
+
+- active HTML rendering escapes user-controlled values;
+- configuration page exposes editable forms for defaults, recipients, schedules, SMTP, providers, branding, and notifications;
+- invalid recipient email returns a safe configuration page with preserved form values;
+- schedules reject unknown recipient ids;
+- default and schedule send times reject impossible `HH:MM` values such as `24:00` and `99:99`;
+- SMTP password values are not echoed in responses or persisted JSON;
+- invalid branding accent colors are rejected;
+- notification retention and cooldown fields reject empty or negative values;
+- manual preview renders confirmation content without sending Email.
+
+Current packaging boundary:
+
+- current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
+- Web dashboard service files are intentionally excluded from the current OpenPet command-plugin zip;
+- unified service/dashboard packaging remains deferred to the unified extension package phase.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:
