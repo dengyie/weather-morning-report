@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天气早报管理登录</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body class="auth-page">
+  <main class="narrow">
+    <section class="card auth-card">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">W</span><div><p class="eyebrow">Weather Morning Report</p><h1>欢迎回来</h1></div></div>
+      <p class="muted">登录管理天气早报、投递计划和运行状态。</p>
+      {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      <form method="post" action="/login">
+        <label>用户名<input name="username" autocomplete="username" required autofocus></label>
+        <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
+        <button type="submit">登录控制台</button>
+      </form>
+      <p class="auth-footer"><a href="/forgot-password">忘记密码？</a></p>
+    </section>
+  </main>
+</body>
+</html>
