@@ -12,12 +12,12 @@ const stripModule = (source, { removeRequires = true } = {}) => {
 }
 
 const bundle = [
-  stripModule(readModule('src/config.js')),
-  stripModule(readModule('src/wttr-parser.js')),
-  stripModule(readModule('src/weather-provider.js')),
-  stripModule(readModule('src/period-schedule.js')),
-  stripModule(readModule('src/recommendation-engine.js')),
-  stripModule(readModule('src/text-renderer.js')),
+  stripModule(readModule('core/config.js')),
+  stripModule(readModule('core/wttr-parser.js')),
+  stripModule(readModule('core/weather-provider.js')),
+  stripModule(readModule('core/period-schedule.js')),
+  stripModule(readModule('core/recommendation-engine.js')),
+  stripModule(readModule('rendering/text-renderer.js')),
   stripModule(readModule('src/commands.js')),
   'module.exports = function activate(ctx) {\n  return createCommands(ctx)\n}\n'
 ].join('\n\n')

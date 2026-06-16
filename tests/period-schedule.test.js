@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { scheduleFor } = require('../src/period-schedule')
+const { scheduleFor } = require('../core/period-schedule')
 
 test('morning schedules distinguish workdays and rest days', () => {
   const workday = scheduleFor(new Date('2026-06-08'))

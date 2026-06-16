@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { normalizeWttrPayload } = require('../src/wttr-parser')
+const { normalizeWttrPayload } = require('../core/wttr-parser')
 
 test('normalizes current, daily, and hourly wttr fields defensively', () => {
   const snapshot = normalizeWttrPayload({

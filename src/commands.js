@@ -1,7 +1,7 @@
-const { fetchWeatherSnapshot } = require('./weather-provider')
-const { normalizeConfig } = require('./config')
-const { recommendWeather } = require('./recommendation-engine')
-const { renderWeatherText } = require('./text-renderer')
+const { fetchWeatherSnapshot } = require('../core/weather-provider')
+const { normalizeConfig } = require('../core/config')
+const { recommendWeather } = require('../core/recommendation-engine')
+const { renderWeatherText } = require('../rendering/text-renderer')
 
 const cloneJson = (value) => JSON.parse(JSON.stringify(value))
 

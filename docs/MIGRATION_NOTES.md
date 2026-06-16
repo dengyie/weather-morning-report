@@ -18,12 +18,12 @@
 
 | 旧 Python 能力 | 新 JS/OpenPet 落点 | 当前状态 |
 | --- | --- | --- |
-| wttr `format=j1` provider | `src/weather-provider.js`、`src/wttr-parser.js` | 已迁移 |
-| `wttr.in` / `wttr.is` fallback | `src/weather-provider.js` | 已迁移 |
-| 防御性字段解析 | `src/wttr-parser.js` | 已迁移 |
-| 推荐阈值与风险信号 | `src/recommendation-engine.js` | 已迁移 |
-| 早/中/晚重点时段 | `src/period-schedule.js` | 已迁移 |
-| 文本报告 | `src/text-renderer.js` | 已迁移为宠物 summary 和 detail |
+| wttr `format=j1` provider | `core/weather-provider.js`、`core/wttr-parser.js` | 已迁移 |
+| `wttr.in` / `wttr.is` fallback | `core/weather-provider.js` | 已迁移 |
+| 防御性字段解析 | `core/wttr-parser.js` | 已迁移 |
+| 推荐阈值与风险信号 | `core/recommendation-engine.js` | 已迁移 |
+| 早/中/晚重点时段 | `core/period-schedule.js` | 已迁移 |
+| 文本报告 | `rendering/text-renderer.js` | 已迁移为宠物 summary 和 detail |
 | 缓存 | `ctx.storage` in `src/commands.js` | 已迁移为小型 scoped storage |
 | 命令入口 | `src/activate.js`、`src/commands.js` | 已迁移 |
 
@@ -59,15 +59,17 @@ weather-morning-report/
 │   ├── config.schema.json
 │   ├── index.js
 │   └── README.md
-├── src/
-│   ├── activate.js
-│   ├── commands.js
+├── core/
 │   ├── config.js
 │   ├── weather-provider.js
 │   ├── wttr-parser.js
 │   ├── recommendation-engine.js
-│   ├── period-schedule.js
+│   └── period-schedule.js
+├── rendering/
 │   └── text-renderer.js
+├── src/
+│   ├── activate.js
+│   └── commands.js
 ├── scripts/
 │   ├── build-plugin.js
 │   ├── check-plugin-artifact.js
@@ -89,7 +91,9 @@ weather-morning-report/
 
 职责边界：
 
-- `src/`：开发源码，可模块化，可测试。
+- `core/`：framework-neutral 天气、配置、provider、parser、推荐与时段逻辑。
+- `rendering/`：framework-neutral 文案/视图模型渲染逻辑。
+- `src/`：OpenPet command adapter，只保留宿主 `ctx`、storage、pet say、命令编排。
 - `openpet-plugin/`：OpenPet 可安装包根目录，必须始终能被 OpenPet `validate:plugin` 检查。
 - `openpet-plugin/index.js`：构建产物，必须为单文件，不依赖 runtime `require`。
 - `scripts/`：构建、打包、产物检查。
@@ -115,7 +119,7 @@ weather-morning-report/
 推荐顺序：
 
 1. 写或更新测试。
-2. 修改 `src/` 源码。
+2. 修改 `core/`、`rendering/` 或 `src/` 源码。
 3. 运行 `npm test`。
 4. 运行 `npm run build` 刷新 `openpet-plugin/index.js`。
 5. 运行 artifact 检查和 OpenPet 验证。
@@ -250,7 +254,7 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 - `package.json`
 - `src/activate.js`
 - `src/commands.js`
-- `src/config.js`
+- `core/config.js`
 - `openpet-plugin/plugin.json`
 - `openpet-plugin/config.schema.json`
 - `openpet-plugin/index.js`
@@ -262,8 +266,8 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 产物：
 
-- `src/weather-provider.js`
-- `src/wttr-parser.js`
+- `core/weather-provider.js`
+- `core/wttr-parser.js`
 - provider/parser tests
 
 结果：已完成。实现 wttr 双 host fallback、防御解析和规范化快照。
@@ -272,9 +276,9 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 产物：
 
-- `src/recommendation-engine.js`
-- `src/period-schedule.js`
-- `src/text-renderer.js`
+- `core/recommendation-engine.js`
+- `core/period-schedule.js`
+- `rendering/text-renderer.js`
 - recommendation/period/render tests
 
 结果：已完成。实现天气风险信号、时段摘要、zh-CN/en summary/detail。
@@ -291,7 +295,7 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 当前实现说明：
 
-- 缓存逻辑在 `src/commands.js` 内实现，没有单独 `src/storage.js`。
+- 缓存逻辑在 `src/commands.js` 内实现，没有单独 storage 模块。
 - `refresh` 在 `announceOnRefresh=false` 时默认不播报；若本次返回 cached report，可播报缓存摘要解释降级。
 - 统计会记录刷新成功/失败时间、刷新次数和播报次数；`last` 也会复用同一播报计数。
 
@@ -327,6 +331,20 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 结果：已完成。仓库不再暴露 Python 服务入口，README 只描述 OpenPet 插件安装、配置、隐私和验证。
 
+### Phase 7：Core/Rendering 边界抽取
+
+产物：
+
+- `core/config.js`
+- `core/weather-provider.js`
+- `core/wttr-parser.js`
+- `core/recommendation-engine.js`
+- `core/period-schedule.js`
+- `rendering/text-renderer.js`
+- `tests/architecture-boundary.test.js`
+
+结果：已完成。天气、配置、provider、parser、推荐、时段和文本渲染已从 OpenPet adapter 中抽出；`src/commands.js` 只负责 OpenPet `ctx`、storage、pet say 和命令编排。当前 command-plugin bundle 仍由 `scripts/build-plugin.js` 生成，并继续通过 OpenPet validator。
+
 ## 7. 生产级风险清单
 
 | 风险 | 等级 | 触发条件 | 缓解 |
@@ -340,7 +358,7 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 | 用户位置隐私 | P2 | `locationQuery` 包含精确地址 | README 明示会发送给 wttr，建议城市级查询 |
 | 宠物播报噪音 | P3 | 用户频繁触发 `refresh` | `announceOnRefresh` 可关闭；debug 不走 `pet.say` |
 | 更新后权限变化 | P2 | 后续新增 `pet:event` / `ai:chat` / 新 host | 先改契约和 README，接受 OpenPet update review / re-enable 流程 |
-| 打包产物与源码不一致 | P2 | 手动编辑 `openpet-plugin/index.js` 或 release zip | 以 `src/` + build script 为源；发布前重新 build/package/validate |
+| 打包产物与源码不一致 | P2 | 手动编辑 `openpet-plugin/index.js` 或 release zip | 以 `core/` + `rendering/` + `src/` + build script 为源；发布前重新 build/package/validate |
 
 ## 8. 完成定义
 
@@ -371,7 +389,7 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 优先级从高到低：
 
 1. 增加 wttr fixtures，覆盖晴天高 UV、小雨、大雨、雷暴、强风、高温、hourly 缺失。
-2. 把 storage 读写抽成 `src/storage.js`，便于未来 shape migration。
+2. 把 storage 读写抽成 `service/storage/` 或当前 adapter 内的独立模块，便于未来 shape migration。
 3. 生成可选 `signature.json` hash metadata，并纳入 release preflight。
 4. 如 OpenPet 后续支持调度能力，再评估定时早报；在官方能力出现前不做 daemon workaround。
 

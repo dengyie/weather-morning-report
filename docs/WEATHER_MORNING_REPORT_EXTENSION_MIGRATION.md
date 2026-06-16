@@ -940,6 +940,33 @@ Validation evidence for Phase 1:
 
 Python unit discovery is not part of the active validation baseline in this phase because the recovered Python files are archived migration references, not active runtime code.
 
+## 13.3 Phase 2 Development Record
+
+Phase 2 has started with the safe framework-neutral extraction required before adding Web and Email service code.
+
+Implemented artifacts:
+
+- `core/config.js`
+- `core/weather-provider.js`
+- `core/wttr-parser.js`
+- `core/recommendation-engine.js`
+- `core/period-schedule.js`
+- `rendering/text-renderer.js`
+- `tests/architecture-boundary.test.js`
+
+Current boundary:
+
+- `core/` owns weather provider, parser, configuration normalization, recommendation, and period selection logic.
+- `rendering/` owns deterministic text rendering.
+- `src/` remains the current OpenPet command adapter and owns `ctx`, `ctx.storage`, `ctx.pet.say`, and command orchestration.
+- `scripts/build-plugin.js` still produces the current command-plugin bundle from `core/`, `rendering/`, and `src/`.
+
+Remaining Phase 2 work before Web/Email service implementation:
+
+- introduce a shared report model that can feed pet text, dashboard previews, and Email rendering;
+- split command cache/storage helpers if the service needs to reuse them;
+- add HTML/Email view-model tests before promoting legacy templates into active runtime.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

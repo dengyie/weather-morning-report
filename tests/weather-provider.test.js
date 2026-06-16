@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { fetchWeatherSnapshot } = require('../src/weather-provider')
+const { fetchWeatherSnapshot } = require('../core/weather-provider')
 
 const samplePayload = {
   current_condition: [{ weatherDesc: [{ value: 'Sunny' }], temp_C: '25', FeelsLikeC: '26' }],

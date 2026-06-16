@@ -34,7 +34,9 @@ Read these first for all new development:
 
 This repository is currently an OpenPet JavaScript plugin project, with a new design direction toward a unified OpenPet extension package that also restores Web and Email service capabilities.
 
-- Source modules live in `src/`.
+- Framework-neutral weather modules live in `core/`.
+- Framework-neutral text rendering lives in `rendering/`.
+- OpenPet command adapter modules live in `src/`.
 - Installable plugin root lives in `openpet-plugin/`.
 - Bundled OpenPet entry is `openpet-plugin/index.js`.
 - Release package is generated at `release/weather-morning-report.openpet-plugin.zip`.

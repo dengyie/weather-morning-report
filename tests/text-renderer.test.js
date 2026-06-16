@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { renderWeatherText } = require('../src/text-renderer')
+const { renderWeatherText } = require('../rendering/text-renderer')
 
 const baseReport = {
   subject: '天气早报 · 上海',

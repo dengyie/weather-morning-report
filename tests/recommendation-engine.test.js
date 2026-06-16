@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { recommendWeather } = require('../src/recommendation-engine')
+const { recommendWeather } = require('../core/recommendation-engine')
 
 const baseSnapshot = {
   schemaVersion: 1,
