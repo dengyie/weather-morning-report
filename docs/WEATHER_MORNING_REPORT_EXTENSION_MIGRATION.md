@@ -1232,6 +1232,36 @@ Remaining Phase 8 alignment:
 - expose dashboard/service health through OpenPet surfaces;
 - replace repository-local unified validation with the official validator once it exists.
 
+## 13.9 Phase 8 Development Record
+
+Phase 8 aligns the unified extension package with the current sibling OpenPet validator while preserving the local package-specific validator from Phase 7.
+
+Implemented artifacts:
+
+- `tests/openpet-extension-validate.test.js`
+- `docs/superpowers/specs/2026-06-17-phase-8-openpet-alignment-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-8-openpet-alignment.md`
+- updated `extension/plugin.json`
+
+OpenPet alignment behavior:
+
+- `release/weather-morning-report.openpet-extension.zip` is now validated by `/Users/mango/project/codex/OpenPet` using `npm run validate:plugin`;
+- `extension/plugin.json` keeps extension `entries.commands`, `entries.services`, and `entries.dashboards`;
+- `assets` now use OpenPet-supported literal package paths: `static`, `service/views`, and `README.md`;
+- repository-local `npm run lint:extension` remains in place to enforce this project's stricter package exclusions and URL consistency.
+
+Validation coverage:
+
+- the unified extension zip passes the current OpenPet package validator;
+- current command-plugin `.openpet-plugin.zip` validator coverage remains unchanged;
+- local unified artifact validation still checks package-specific exclusions and entry path consistency.
+
+Runtime evidence still required after repository alignment:
+
+- dashboard open behavior should be smoke-tested in the OpenPet Control Center;
+- service start/stop and `/health` state should be smoke-tested through OpenPet service lifecycle controls;
+- command logs and result JSON display should be verified through OpenPet command execution surfaces.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

@@ -63,7 +63,7 @@ The first manifest should follow the target shape already documented in the migr
 - `manifest.dataLocations`: `OPENPET_DATA_DIR`, `OPENPET_CACHE_DIR`, `OPENPET_LOG_DIR`
 - `manifest.selfManagedSecrets`: SMTP username/password
 - `config`: `config.schema.json`
-- `assets`: `static/**`, `service/views/**`, `README.md`
+- `assets`: `static`, `service/views`, `README.md`
 
 Because the final OpenPet unified schema is not available yet, Phase 7 validation should be strict about this repository's intended shape but should not claim catalog-level compatibility.
 
