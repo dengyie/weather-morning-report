@@ -39,5 +39,5 @@
     ]
   },
   "config": "config.schema.json",
-  "assets": ["static/**", "service/views/**", "README.md"]
+  "assets": ["static", "service/views", "README.md"]
 }
