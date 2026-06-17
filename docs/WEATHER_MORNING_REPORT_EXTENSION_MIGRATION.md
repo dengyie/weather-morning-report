@@ -941,6 +941,19 @@ Done when:
 - test Email does not write delivery history records;
 - failures redact runtime SMTP secrets.
 
+### Phase 13: SMTP Operational UX Feedback
+
+- Turn SMTP operational actions into configuration-page workflows.
+- Show human-readable success and failure feedback in the dashboard.
+- Keep machine-readable JSON behavior available for non-page callers.
+
+Done when:
+
+- configuration page can render success notices for SMTP operational actions;
+- SMTP test connection page submissions redirect back to configuration with clear success feedback;
+- test Email page submissions redirect back to configuration with clear recipient-aware success feedback;
+- page-mode failures stay on the configuration page with redacted, human-readable feedback.
+
 ## 13.1 Recommended Implementation Order
 
 The safest development order is:
@@ -1516,6 +1529,52 @@ Remaining SMTP work:
 - encrypted service-managed SMTP password storage remains out of scope;
 - richer dashboard status rendering for operation results remains future UI work;
 - scheduler worker daemonization remains separate from SMTP operational checks.
+
+## 13.18 Phase 13 Planned SMTP Operational UX Feedback
+
+Phase 13 should convert the raw SMTP operation responses into configuration-page feedback workflows while preserving API-friendly behavior.
+
+Planned behavior:
+
+- configuration page should support success notices distinct from validation errors;
+- SMTP operational forms should opt into page-mode feedback instead of raw JSON responses;
+- successful SMTP connection tests should redirect back to `/configuration` with a clear success notice;
+- successful test Emails should redirect back to `/configuration` with a clear recipient-aware success notice;
+- page-mode failures should render the configuration page with redacted operational feedback and preserve the SMTP testing controls.
+
+## 13.19 Phase 13 Development Record
+
+Phase 13 turns SMTP operational actions into first-class configuration workbench flows.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-13-smtp-operational-ux-feedback-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-13-smtp-operational-ux-feedback.md`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+- updated `static/app.css`
+
+Operational behavior:
+
+- configuration page now supports success notices in addition to warning/error feedback;
+- SMTP operational forms submit `page_mode=configuration` so browser form posts get page-native feedback;
+- page-mode `POST /configuration/smtp/test-connection` redirects back to `/configuration` with a success notice after a successful verify;
+- page-mode `POST /email/test` redirects back to `/configuration` with a recipient-aware success notice after a successful send;
+- page-mode operational failures render the configuration page with redacted warnings instead of raw JSON;
+- non-page callers keep the existing JSON contracts for SMTP operational routes.
+
+Validation coverage:
+
+- configuration page tests cover success notice rendering alongside SMTP controls;
+- service route tests cover page-mode SMTP connection success redirects and failure re-renders;
+- service route tests cover page-mode test Email success redirects and failure re-renders;
+- existing JSON-mode route tests remain in place to guard backward-compatible operational responses.
+
+Remaining SMTP work:
+
+- encrypted service-managed SMTP password storage remains out of scope;
+- richer persistent audit/history for operational checks remains future work;
+- scheduler worker daemonization remains separate from SMTP operational UX.
 
 ## 14. Deliberate Non-Goals
 

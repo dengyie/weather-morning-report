@@ -51,3 +51,25 @@ p {
   font-size: 1.05rem;
   line-height: 1.7;
 }
+
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(78, 111, 169, 0.18);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.notice p + p {
+  margin-top: 0.35rem;
+}
+
+.notice-warning {
+  border-color: rgba(184, 113, 0, 0.28);
+  background: rgba(255, 245, 220, 0.95);
+}
+
+.notice-success {
+  border-color: rgba(29, 122, 63, 0.24);
+  background: rgba(232, 248, 237, 0.95);
+}
