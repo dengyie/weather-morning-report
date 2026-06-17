@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 
 const { createServiceApp } = require('../service/app')
 const { loadDeliveryHistory } = require('../service/storage/delivery-history-store')
+const { loadSmtpOperationHistory } = require('../service/storage/smtp-operation-history-store')
 const { loadSchedulerState } = require('../service/scheduler/state-store')
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -422,6 +423,49 @@ test('configuration page can render SMTP operation success notices', async () =>
   })
 })
 
+test('configuration page renders recent SMTP operational history', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration?smtp_notice=recent-history-placeholder' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /recent-history-placeholder/)
+    assert.match(page.body, /SMTP operational history/)
+    assert.match(page.body, /test-connection · connected/)
+  })
+})
+
 test('smtp test connection route verifies current configuration without sending email', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const calls = []
@@ -467,6 +511,43 @@ test('smtp test connection route verifies current configuration without sending 
   })
 })
 
+test('smtp test connection route appends operational history on success', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].action, 'test-connection')
+    assert.equal(history[0].status, 'connected')
+  })
+})
+
 test('page-mode smtp test connection redirects to configuration with success notice', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
@@ -498,6 +579,47 @@ test('page-mode smtp test connection redirects to configuration with success not
 
     assert.equal(response.statusCode, 303)
     assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
+  })
+})
+
+test('smtp test connection route appends redacted operational history on failure', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'runtime-secret'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      emailTransport: {
+        async verify () {
+          throw new Error(`SMTP auth failed for ${secret}`)
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].action, 'test-connection')
+    assert.equal(history[0].status, 'failed')
+    assert.match(history[0].error, /\[redacted\]/)
+    assert.doesNotMatch(JSON.stringify(history), new RegExp(secret))
   })
 })
 
@@ -904,6 +1026,50 @@ test('email test route sends operational test message without delivery history',
   })
 })
 
+test('email test route appends operational history on success', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async send () {
+          return { messageId: 'smtp-test-message-1' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].action, 'test-email')
+    assert.equal(history[0].status, 'sent')
+    assert.equal(history[0].recipientEmail, 'mango@example.com')
+  })
+})
+
 test('page-mode email test redirects to configuration with recipient success notice', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
@@ -942,6 +1108,80 @@ test('page-mode email test redirects to configuration with recipient success not
     assert.equal(response.statusCode, 303)
     assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
     assert.match(decodeURIComponent(response.headers.location || ''), /Mango/)
+  })
+})
+
+test('email test route appends redacted operational history on failure', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'runtime-secret'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      emailTransport: {
+        async send () {
+          throw new Error(`SMTP send failed with ${secret}`)
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].action, 'test-email')
+    assert.equal(history[0].status, 'failed')
+    assert.match(history[0].error, /\[redacted\]/)
+    assert.doesNotMatch(JSON.stringify(history), new RegExp(secret))
+  })
+})
+
+test('email test route appends operational history for missing recipients', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=missing',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.equal(history.length, 1)
+    assert.equal(history[0].action, 'test-email')
+    assert.equal(history[0].status, 'failed')
+    assert.match(history[0].error, /收件人不存在/)
   })
 })
 

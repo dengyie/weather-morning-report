@@ -954,6 +954,19 @@ Done when:
 - test Email page submissions redirect back to configuration with clear recipient-aware success feedback;
 - page-mode failures stay on the configuration page with redacted, human-readable feedback.
 
+### Phase 14: SMTP Operational History
+
+- Persist SMTP operational checks as bounded history.
+- Surface recent SMTP operational checks in the configuration page.
+- Keep SMTP operational history redacted and service-owned.
+
+Done when:
+
+- SMTP test connection and test Email both append bounded operational history records;
+- configuration page renders recent SMTP operational history;
+- operational history keeps runtime SMTP secrets redacted;
+- existing Email delivery history behavior remains unchanged.
+
 ## 13.1 Recommended Implementation Order
 
 The safest development order is:
@@ -1573,8 +1586,52 @@ Validation coverage:
 Remaining SMTP work:
 
 - encrypted service-managed SMTP password storage remains out of scope;
-- richer persistent audit/history for operational checks remains future work;
 - scheduler worker daemonization remains separate from SMTP operational UX.
+
+## 13.20 Phase 14 Planned SMTP Operational History
+
+Phase 14 should persist SMTP operational check results and show recent checks in the configuration page.
+
+Planned behavior:
+
+- SMTP test connection should append a bounded operational history record on both success and failure;
+- test Email should append a bounded operational history record on both success and failure;
+- configuration page should render recent SMTP operational history in the SMTP section;
+- operational history should remain separate from delivery history and redact runtime SMTP secrets.
+
+## 13.21 Phase 14 Development Record
+
+Phase 14 adds persistent SMTP operational history for connection tests and test Emails.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-14-smtp-operational-history-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-14-smtp-operational-history.md`
+- added `service/storage/smtp-operation-history-store.js`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+
+Operational behavior:
+
+- SMTP test connection appends bounded operational history records on both success and failure;
+- test Email appends bounded operational history records on both success and failure;
+- operational history is stored separately from `delivery-history.json`;
+- configuration page renders recent SMTP operational history beside the SMTP controls;
+- persisted operational history keeps runtime SMTP secrets redacted.
+
+Validation coverage:
+
+- storage tests cover bounded SMTP operational history persistence;
+- service route tests cover success/failure history records for SMTP connection tests;
+- service route tests cover success/failure history records for test Emails;
+- configuration page tests cover recent SMTP operational history rendering;
+- existing delivery-history tests remain in place to guard separation from weather report delivery history.
+
+Remaining SMTP work:
+
+- encrypted service-managed SMTP password storage remains out of scope;
+- richer filtering/export for SMTP operational history remains future work;
+- scheduler worker daemonization remains separate from SMTP operational history.
 
 ## 14. Deliberate Non-Goals
 

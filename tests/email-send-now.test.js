@@ -7,6 +7,7 @@ const assert = require('node:assert/strict')
 const { createDefaultConfiguration } = require('../service/configuration/defaults')
 const { saveConfiguration } = require('../service/storage/configuration-store')
 const { appendDeliveryHistory, deliveryHistoryPath, loadDeliveryHistory } = require('../service/storage/delivery-history-store')
+const { appendSmtpOperationHistory, loadSmtpOperationHistory, smtpOperationHistoryPath } = require('../service/storage/smtp-operation-history-store')
 const { sendEmailNow } = require('../service/email/send-now')
 const { createFakeEmailTransport, createSmtpEmailTransport } = require('../service/email/transports')
 
@@ -109,6 +110,19 @@ test('delivery history storage creates bounded newest-last records', async () =>
     assert.equal(existsSync(deliveryHistoryPath(paths)), true)
     assert.deepEqual(loadDeliveryHistory(paths).map((record) => record.id), ['delivery-2', 'delivery-3'])
     assert.match(readFileSync(deliveryHistoryPath(paths), 'utf8'), /\n$/)
+  })
+})
+
+test('SMTP operational history storage creates bounded newest-last records', async () => {
+  await withTempServiceDirs(async (paths) => {
+    assert.deepEqual(loadSmtpOperationHistory(paths), [])
+    appendSmtpOperationHistory(paths, { id: 'smtp-op-1', status: 'connected' }, { limit: 2 })
+    appendSmtpOperationHistory(paths, { id: 'smtp-op-2', status: 'failed' }, { limit: 2 })
+    appendSmtpOperationHistory(paths, { id: 'smtp-op-3', status: 'sent' }, { limit: 2 })
+
+    assert.equal(existsSync(smtpOperationHistoryPath(paths)), true)
+    assert.deepEqual(loadSmtpOperationHistory(paths).map((record) => record.id), ['smtp-op-2', 'smtp-op-3'])
+    assert.match(readFileSync(smtpOperationHistoryPath(paths), 'utf8'), /\n$/)
   })
 })
 

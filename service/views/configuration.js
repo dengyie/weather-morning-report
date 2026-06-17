@@ -43,6 +43,18 @@ const renderRecipients = (recipients) => `<section class="card workbench-card">
     </article>`).join('')}
 </section>`
 
+const renderSmtpOperations = (operations = []) => `<div class="history-list">
+  ${operations.length === 0
+    ? '<p class="muted">暂无 SMTP 操作历史。</p>'
+    : operations.slice(-5).reverse().map((operation) => `<article class="record-card">
+      <h3>${escapeHtml(operation.action)} · ${escapeHtml(operation.status)}</h3>
+      <p class="muted">${escapeHtml(operation.createdAt)}</p>
+      ${operation.recipientEmail ? `<p>${escapeHtml(operation.recipientName)} · ${escapeHtml(operation.recipientEmail)}</p>` : ''}
+      ${operation.messageId ? `<p>Message ID: ${escapeHtml(operation.messageId)}</p>` : ''}
+      ${operation.error ? `<p>${escapeHtml(operation.error)}</p>` : ''}
+    </article>`).join('')}
+</div>`
+
 const renderNotices = (notices = [], type) => notices.length === 0
   ? ''
   : `<div class="notice notice-${escapeHtml(type)}">${notices.map((notice) => `<p>${escapeHtml(notice)}</p>`).join('')}</div>`
@@ -141,7 +153,7 @@ const renderNotificationsForm = (values) => renderSection('通知与数据保留
   <button type="submit">保存通知设置</button>
 </form>`)
 
-const renderConfigurationPage = ({ configuration, errors = [], notices = [], values = {} }) => renderPage({
+const renderConfigurationPage = ({ configuration, errors = [], notices = [], smtpOperations = [], values = {} }) => renderPage({
   title: '天气早报配置中心',
   activePath: '/configuration',
   body: `<section class="hero config-hero">
@@ -156,6 +168,10 @@ const renderConfigurationPage = ({ configuration, errors = [], notices = [], val
   ${renderRecipients(configuration.recipients)}
   ${renderSchedules(configuration, values.schedule)}
   ${renderSmtpForm(values.smtp || configuration.smtp, configuration.recipients)}
+  <section class="card workbench-card">
+    <div class="section-head"><div><h2>SMTP operational history</h2><p class="muted">最近的连接测试和测试邮件结果。</p></div></div>
+    ${renderSmtpOperations(smtpOperations)}
+  </section>
   ${renderProviders(configuration.providers)}
   ${renderBrandingForm(values.branding || configuration.branding)}
   ${renderNotificationsForm(values.notifications || configuration.notifications)}`

@@ -7,6 +7,7 @@ const { validateBranding, validateDefaults, validateManualPreview, validateNotif
 const { defaultFetchReport, redactError, sendEmailNow } = require('./email/send-now')
 const { createSmtpEmailTransport } = require('./email/transports')
 const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./storage/configuration-store')
+const { appendSmtpOperationHistory, loadSmtpOperationHistory } = require('./storage/smtp-operation-history-store')
 const { renderConfigurationPage } = require('./views/configuration')
 const { renderDashboardPage } = require('./views/dashboard')
 const { renderEmailPreviewPage } = require('./views/email-preview')
@@ -28,6 +29,27 @@ const configuredSmtpSender = (smtp = {}) => {
 const isConfigurationPageMode = (body = {}) => body?.page_mode === 'configuration'
 
 const configurationNoticeLocation = (message) => `/configuration?smtp_notice=${encodeURIComponent(message)}`
+
+let smtpOperationSequence = 0
+
+const createSmtpOperationRecord = ({ action, status, recipient, messageId, error, now = new Date() }) => {
+  smtpOperationSequence += 1
+  return {
+    id: `smtp-operation-${now.toISOString().replace(/[:.]/g, '-')}-${smtpOperationSequence}`,
+    createdAt: now.toISOString(),
+    action,
+    status,
+    ...(recipient
+      ? {
+          recipientId: recipient.id,
+          recipientEmail: recipient.email,
+          recipientName: recipient.name
+        }
+      : {}),
+    ...(messageId ? { messageId } : {}),
+    ...(error ? { error } : {})
+  }
+}
 
 const createServiceApp = ({
   env = process.env,
@@ -64,9 +86,14 @@ const createServiceApp = ({
 
   app.get('/configuration', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
+    const smtpOperations = loadSmtpOperationHistory(paths)
     reply.type('text/html; charset=utf-8')
     const notice = String(_request.query?.smtp_notice || '').trim()
-    return renderConfigurationPage({ configuration, notices: notice ? [notice] : [] })
+    return renderConfigurationPage({
+      configuration,
+      notices: notice ? [notice] : [],
+      smtpOperations
+    })
   })
 
   app.get('/logs', async (_request, reply) => {
@@ -164,19 +191,30 @@ const createServiceApp = ({
         },
         smtp: configuration.smtp
       })
+      appendSmtpOperationHistory(paths, createSmtpOperationRecord({
+        action: 'test-connection',
+        status: 'connected'
+      }))
       if (pageMode) {
         return reply.code(303).header('location', configurationNoticeLocation('SMTP connection verified.')).send()
       }
       return reply.code(200).send({ ok: true, status: 'connected' })
     } catch (error) {
+      const redacted = redactError(error, [env.SMTP_PASSWORD])
+      appendSmtpOperationHistory(paths, createSmtpOperationRecord({
+        action: 'test-connection',
+        status: 'failed',
+        error: redacted
+      }))
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
           configuration,
-          errors: [`测试 SMTP 连接失败：${redactError(error, [env.SMTP_PASSWORD])}`]
+          errors: [`测试 SMTP 连接失败：${redacted}`],
+          smtpOperations: loadSmtpOperationHistory(paths)
         })
       }
-      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+      return reply.code(502).send({ ok: false, error: redacted })
     }
   })
 
@@ -267,6 +305,11 @@ const createServiceApp = ({
     const recipient = findRecipient(configuration, request.body?.recipient_id)
     const pageMode = isConfigurationPageMode(request.body)
     if (!recipient) {
+      appendSmtpOperationHistory(paths, createSmtpOperationRecord({
+        action: 'test-email',
+        status: 'failed',
+        error: '收件人不存在'
+      }))
       if (pageMode) {
         reply.code(400).type('text/html; charset=utf-8')
         return renderConfigurationPage({ configuration, errors: ['收件人不存在'] })
@@ -285,19 +328,34 @@ const createServiceApp = ({
         text: 'Weather Morning Report SMTP test message. If you received this, Email delivery is configured.',
         html: '<p>Weather Morning Report SMTP test message.</p><p>If you received this, Email delivery is configured.</p>'
       })
+      const messageId = delivery?.messageId || 'smtp-test'
+      appendSmtpOperationHistory(paths, createSmtpOperationRecord({
+        action: 'test-email',
+        status: 'sent',
+        recipient,
+        messageId
+      }))
       if (pageMode) {
         return reply.code(303).header('location', configurationNoticeLocation(`Test Email sent to ${recipient.name}.`)).send()
       }
-      return reply.code(200).send({ ok: true, status: 'sent', messageId: delivery?.messageId || 'smtp-test' })
+      return reply.code(200).send({ ok: true, status: 'sent', messageId })
     } catch (error) {
+      const redacted = redactError(error, [env.SMTP_PASSWORD])
+      appendSmtpOperationHistory(paths, createSmtpOperationRecord({
+        action: 'test-email',
+        status: 'failed',
+        recipient,
+        error: redacted
+      }))
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
           configuration,
-          errors: [`发送测试邮件失败：${redactError(error, [env.SMTP_PASSWORD])}`]
+          errors: [`发送测试邮件失败：${redacted}`],
+          smtpOperations: loadSmtpOperationHistory(paths)
         })
       }
-      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+      return reply.code(502).send({ ok: false, error: redacted })
     }
   })
 
