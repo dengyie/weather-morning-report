@@ -147,12 +147,20 @@ test('sendEmailNow sends through fake transport and records redacted sent histor
 const createNodemailerProbe = () => {
   const options = []
   const messages = []
+  let verifyCount = 0
   return {
     options,
     messages,
+    get verifyCount () {
+      return verifyCount
+    },
     createTransport (transportOptions) {
       options.push(transportOptions)
       return {
+        async verify () {
+          verifyCount += 1
+          return true
+        },
         async sendMail (message) {
           messages.push(message)
           return { messageId: 'smtp-message-1', accepted: [message.to] }
@@ -206,6 +214,37 @@ test('SMTP transport maps starttls settings and runtime password to nodemailer',
     text: 'Plain report',
     html: '<p>HTML report</p>'
   })
+})
+
+test('SMTP transport verify maps options and checks the connection', async () => {
+  const probe = createNodemailerProbe()
+  const transport = createSmtpEmailTransport({
+    env: { SMTP_PASSWORD: 'runtime-secret', SMTP_TIMEOUT_MS: '4321' },
+    createTransport: probe.createTransport
+  })
+
+  const result = await transport.verify({
+    envelope: { from: 'sender@example.com' },
+    smtp: {
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'mango',
+      security: 'starttls',
+      senderEmail: 'sender@example.com',
+      passwordSaved: true
+    }
+  })
+
+  assert.deepEqual(result, { ok: true })
+  assert.equal(probe.verifyCount, 1)
+  assert.equal(probe.options[0].host, 'smtp.example.com')
+  assert.equal(probe.options[0].requireTLS, true)
+  assert.equal(probe.options[0].connectionTimeout, 4321)
+  assert.deepEqual(probe.options[0].auth, {
+    user: 'mango',
+    pass: 'runtime-secret'
+  })
+  assert.equal(probe.messages.length, 0)
 })
 
 test('SMTP transport preserves runtime password exactly', async () => {

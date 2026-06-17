@@ -19,6 +19,12 @@ const { version } = require('../package.json')
 const findRecipient = (configuration, recipientId) => configuration.recipients
   .find((recipient) => recipient.id === recipientId && !recipient.archivedAt)
 
+const configuredSmtpSender = (smtp = {}) => {
+  const senderEmail = String(smtp.senderEmail || smtp.username || '').trim()
+  if (!senderEmail) throw new Error('SMTP sender email is required')
+  return senderEmail
+}
+
 const createServiceApp = ({
   env = process.env,
   emailTransport,
@@ -139,6 +145,25 @@ const createServiceApp = ({
     return reply.code(303).header('location', '/configuration').send()
   })
 
+  app.post('/configuration/smtp/test-connection', async (_request, reply) => {
+    const configuration = loadConfiguration(paths)
+    try {
+      if (typeof resolvedEmailTransport.verify !== 'function') {
+        throw new Error('SMTP transport does not support connection verification')
+      }
+      const senderEmail = configuredSmtpSender(configuration.smtp)
+      await resolvedEmailTransport.verify({
+        envelope: {
+          from: senderEmail
+        },
+        smtp: configuration.smtp
+      })
+      return reply.code(200).send({ ok: true, status: 'connected' })
+    } catch (error) {
+      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+    }
+  })
+
   app.post('/configuration/branding', async (request, reply) => {
     const configuration = loadConfiguration(paths)
     const result = validateBranding(request.body)
@@ -217,6 +242,30 @@ const createServiceApp = ({
       if (error.message === '收件人不存在') {
         return reply.code(400).send({ ok: false, error: error.message })
       }
+      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+    }
+  })
+
+  app.post('/email/test', async (request, reply) => {
+    const configuration = loadConfiguration(paths)
+    const recipient = findRecipient(configuration, request.body?.recipient_id)
+    if (!recipient) {
+      return reply.code(400).send({ ok: false, error: '收件人不存在' })
+    }
+    try {
+      const senderEmail = configuredSmtpSender(configuration.smtp)
+      const delivery = await resolvedEmailTransport.send({
+        envelope: {
+          from: senderEmail,
+          to: recipient.email
+        },
+        smtp: configuration.smtp,
+        subject: 'Weather Morning Report SMTP test',
+        text: 'Weather Morning Report SMTP test message. If you received this, Email delivery is configured.',
+        html: '<p>Weather Morning Report SMTP test message.</p><p>If you received this, Email delivery is configured.</p>'
+      })
+      return reply.code(200).send({ ok: true, status: 'sent', messageId: delivery?.messageId || 'smtp-test' })
+    } catch (error) {
       return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
     }
   })
