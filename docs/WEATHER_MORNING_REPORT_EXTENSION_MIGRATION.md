@@ -1638,6 +1638,19 @@ Done when:
 - degraded key or managed-secret states render as warnings without crashing the dashboard;
 - health inspection and configuration routes are covered by tests.
 
+### Phase 18: Secret Key Rotation And Recovery
+
+- Add a safe local `.secret-key` rotation workflow that re-encrypts the managed SMTP password under a new key.
+- Reset backup confirmation after successful rotation so the new key must be acknowledged as backed up.
+- Keep key rotation rollback-safe, secret-free in HTML/logs, and out of export/download scope.
+
+Done when:
+
+- configuration page exposes a safe key-rotation action for healthy managed secret state;
+- successful rotation preserves the managed SMTP password and resets backup confirmation;
+- failed rotation leaves the prior key, secret payload, and configuration metadata usable;
+- rotation behavior is covered by tests and production review.
+
 ## 13.21 Phase 14 Development Record
 
 Phase 14 adds persistent SMTP operational history for connection tests and test Emails.
@@ -1780,7 +1793,6 @@ Validation coverage:
 
 Remaining SMTP work:
 
-- secret key rotation remains out of scope;
 - raw key export/import and downloadable backup files remain intentionally out of scope;
 - external KMS or OS keychain integration remains separate from local key backup UX;
 - scheduler worker daemonization remains separate from secret health UX.
