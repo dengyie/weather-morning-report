@@ -8,6 +8,13 @@ const { createDefaultConfiguration } = require('../service/configuration/default
 const { saveConfiguration } = require('../service/storage/configuration-store')
 const { appendDeliveryHistory, deliveryHistoryPath, loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 const {
+  clearStoredSmtpPassword,
+  loadStoredSmtpPassword,
+  saveStoredSmtpPassword,
+  secretKeyPath,
+  secretsPath
+} = require('../service/storage/secret-store')
+const {
   appendSmtpOperationHistory,
   filterSmtpOperationHistory,
   loadSmtpOperationHistory,
@@ -168,6 +175,44 @@ test('SMTP operational history CSV export includes a header row and newline term
   assert.match(csv, /\n$/)
 })
 
+test('managed SMTP secret storage creates a local key and decrypts the stored password', async () => {
+  await withTempServiceDirs(async (paths) => {
+    assert.equal(existsSync(secretKeyPath(paths)), false)
+    assert.equal(existsSync(secretsPath(paths)), false)
+
+    saveStoredSmtpPassword(paths, 'super-secret-password', { now: new Date('2026-06-17T08:00:00.000Z') })
+    const stored = loadStoredSmtpPassword(paths)
+
+    assert.equal(existsSync(secretKeyPath(paths)), true)
+    assert.equal(existsSync(secretsPath(paths)), true)
+    assert.equal(stored.password, 'super-secret-password')
+    assert.equal(stored.updatedAt, '2026-06-17T08:00:00.000Z')
+    assert.doesNotMatch(readFileSync(secretsPath(paths), 'utf8'), /super-secret-password/)
+  })
+})
+
+test('managed SMTP secret storage clear removes the stored password', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    assert.equal(loadStoredSmtpPassword(paths).password, 'super-secret-password')
+
+    clearStoredSmtpPassword(paths)
+
+    assert.equal(loadStoredSmtpPassword(paths), null)
+  })
+})
+
+test('managed SMTP secret storage fails safely on corrupt secret payloads', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    const secrets = JSON.parse(readFileSync(secretsPath(paths), 'utf8'))
+    secrets.smtpPassword.ciphertext = 'not-valid-base64'
+    require('node:fs').writeFileSync(secretsPath(paths), `${JSON.stringify(secrets, null, 2)}\n`)
+
+    assert.throws(() => loadStoredSmtpPassword(paths), /stored SMTP password could not be decrypted/)
+  })
+})
+
 test('sendEmailNow sends through fake transport and records redacted sent history', async () => {
   await withTempServiceDirs(async (paths) => {
     seedConfiguration(paths)
@@ -270,6 +315,32 @@ test('SMTP transport maps starttls settings and runtime password to nodemailer',
     text: 'Plain report',
     html: '<p>HTML report</p>'
   })
+})
+
+test('SMTP transport uses resolved SMTP password before env fallback', async () => {
+  const probe = createNodemailerProbe()
+  const transport = createSmtpEmailTransport({
+    env: { SMTP_PASSWORD: 'env-secret' },
+    createTransport: probe.createTransport
+  })
+
+  await transport.send({
+    envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+    subject: 'Weather',
+    text: 'Plain report',
+    html: '<p>HTML report</p>',
+    smtp: {
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'mango',
+      security: 'starttls',
+      senderEmail: 'sender@example.com',
+      passwordSaved: true,
+      resolvedPassword: 'managed-secret'
+    }
+  })
+
+  assert.equal(probe.options[0].auth.pass, 'managed-secret')
 })
 
 test('SMTP transport verify maps options and checks the connection', async () => {

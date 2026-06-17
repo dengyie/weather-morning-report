@@ -8,6 +8,12 @@ const { defaultFetchReport, redactError, sendEmailNow } = require('./email/send-
 const { createSmtpEmailTransport } = require('./email/transports')
 const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./storage/configuration-store')
 const {
+  clearStoredSmtpPassword,
+  hasStoredSmtpPassword,
+  loadStoredSmtpPassword,
+  saveStoredSmtpPassword
+} = require('./storage/secret-store')
+const {
   appendSmtpOperationHistory,
   listSmtpOperationHistory,
   loadSmtpOperationHistory,
@@ -41,6 +47,55 @@ const smtpOperationHistoryFiltersFromQuery = (query = {}) => ({
   recipientId: query.smtp_recipient_id
 })
 
+const smtpStateForView = (configuration, { hasManagedPassword = false } = {}) => ({
+  ...configuration.smtp,
+  passwordSaved: configuration.smtp.passwordSaved || hasManagedPassword,
+  hasManagedPassword
+})
+
+const configurationForView = (configuration, smtpState) => ({
+  ...configuration,
+  smtp: smtpState
+})
+
+const withResolvedPassword = (smtp, password) => {
+  const runtimeSmtp = { ...smtp, passwordSaved: true }
+  Object.defineProperty(runtimeSmtp, 'resolvedPassword', {
+    value: password,
+    enumerable: false,
+    configurable: true,
+    writable: false
+  })
+  return runtimeSmtp
+}
+
+const loadStoredPasswordOrThrow = (paths) => {
+  const stored = loadStoredSmtpPassword(paths)
+  return stored || null
+}
+
+const safeLoadStoredPassword = (paths) => {
+  try {
+    return loadStoredSmtpPassword(paths)
+  } catch {
+    return null
+  }
+}
+
+const resolveRuntimeSmtp = (paths, configuration, { includeResolvedPassword = true } = {}) => {
+  const hasManagedPassword = hasStoredSmtpPassword(paths)
+  const stored = hasManagedPassword ? loadStoredPasswordOrThrow(paths) : null
+  return {
+    smtp: stored
+      ? (includeResolvedPassword
+          ? withResolvedPassword(configuration.smtp, stored.password)
+          : { ...configuration.smtp, passwordSaved: true })
+      : configuration.smtp,
+    secrets: stored ? [stored.password] : [],
+    hasManagedPassword
+  }
+}
+
 let smtpOperationSequence = 0
 
 const createSmtpOperationRecord = ({ action, status, recipient, messageId, error, now = new Date() }) => {
@@ -71,6 +126,7 @@ const createServiceApp = ({
 } = {}) => {
   const paths = ensureServicePaths(env)
   const resolvedEmailTransport = emailTransport || createEmailTransport({ env })
+  const allowResolvedPassword = !emailTransport
   const app = fastify({ logger: false })
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
@@ -97,13 +153,14 @@ const createServiceApp = ({
 
   app.get('/configuration', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
+    const managedPasswordPresent = hasStoredSmtpPassword(paths)
     const { filters, records } = listSmtpOperationHistory(paths, smtpOperationHistoryFiltersFromQuery(_request.query), {
       allowedRecipientIds: configuration.recipients.map((recipient) => recipient.id)
     })
     reply.type('text/html; charset=utf-8')
     const notice = String(_request.query?.smtp_notice || '').trim()
     return renderConfigurationPage({
-      configuration,
+      configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
       notices: notice ? [notice] : [],
       smtpOperations: records,
       smtpHistoryFilters: filters
@@ -199,10 +256,23 @@ const createServiceApp = ({
 
   app.post('/configuration/smtp', async (request, reply) => {
     const configuration = loadConfiguration(paths)
+    const managedPasswordPresent = hasStoredSmtpPassword(paths)
     const result = validateSmtp(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { smtp: result.values } })
+      return renderConfigurationPage({
+        configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
+        errors: result.errors,
+        values: {
+          smtp: {
+            ...smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent }),
+            ...result.values
+          }
+        }
+      })
+    }
+    if (result.value.password.length > 0) {
+      saveStoredSmtpPassword(paths, result.value.password)
     }
     configuration.smtp = {
       host: result.value.host,
@@ -210,7 +280,18 @@ const createServiceApp = ({
       username: result.value.username,
       security: result.value.security,
       senderEmail: result.value.senderEmail,
-      passwordSaved: configuration.smtp.passwordSaved || result.value.password.length > 0
+      passwordSaved: configuration.smtp.passwordSaved || managedPasswordPresent || result.value.password.length > 0
+    }
+    saveConfiguration(paths, configuration)
+    return reply.code(303).header('location', '/configuration').send()
+  })
+
+  app.post('/configuration/smtp/clear-password', async (_request, reply) => {
+    const configuration = loadConfiguration(paths)
+    clearStoredSmtpPassword(paths)
+    configuration.smtp = {
+      ...configuration.smtp,
+      passwordSaved: false
     }
     saveConfiguration(paths, configuration)
     return reply.code(303).header('location', '/configuration').send()
@@ -223,12 +304,15 @@ const createServiceApp = ({
       if (typeof resolvedEmailTransport.verify !== 'function') {
         throw new Error('SMTP transport does not support connection verification')
       }
+      const { smtp, hasManagedPassword } = resolveRuntimeSmtp(paths, configuration, {
+        includeResolvedPassword: allowResolvedPassword
+      })
       const senderEmail = configuredSmtpSender(configuration.smtp)
       await resolvedEmailTransport.verify({
         envelope: {
           from: senderEmail
         },
-        smtp: configuration.smtp
+        smtp
       })
       appendSmtpOperationHistory(paths, createSmtpOperationRecord({
         action: 'test-connection',
@@ -239,7 +323,8 @@ const createServiceApp = ({
       }
       return reply.code(200).send({ ok: true, status: 'connected' })
     } catch (error) {
-      const redacted = redactError(error, [env.SMTP_PASSWORD])
+      const managedPasswordPresent = hasStoredSmtpPassword(paths)
+      const redacted = redactError(error, [env.SMTP_PASSWORD, ...(managedPasswordPresent ? [safeLoadStoredPassword(paths)?.password].filter(Boolean) : [])])
       appendSmtpOperationHistory(paths, createSmtpOperationRecord({
         action: 'test-connection',
         status: 'failed',
@@ -248,7 +333,7 @@ const createServiceApp = ({
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
-          configuration,
+          configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
           errors: [`测试 SMTP 连接失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)
         })
@@ -320,13 +405,18 @@ const createServiceApp = ({
 
   app.post('/email/send-now', async (request, reply) => {
     try {
+      const configuration = loadConfiguration(paths)
+      const { smtp, secrets } = resolveRuntimeSmtp(paths, configuration, {
+        includeResolvedPassword: allowResolvedPassword
+      })
       const result = await sendEmailNow({
         paths,
         recipientId: request.body?.recipient_id,
         reportType: request.body?.report_type || 'morning',
+        smtp,
         transport: resolvedEmailTransport,
         fetchReport: fetchEmailReport,
-        secrets: [env.SMTP_PASSWORD]
+        secrets: [...secrets, env.SMTP_PASSWORD]
       })
       return result.ok
         ? reply.code(200).send(result)
@@ -335,7 +425,8 @@ const createServiceApp = ({
       if (error.message === '收件人不存在') {
         return reply.code(400).send({ ok: false, error: error.message })
       }
-      return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
+      const managedPassword = hasStoredSmtpPassword(paths) ? safeLoadStoredPassword(paths)?.password : ''
+      return reply.code(502).send({ ok: false, error: redactError(error, [managedPassword, env.SMTP_PASSWORD]) })
     }
   })
 
@@ -356,13 +447,16 @@ const createServiceApp = ({
       return reply.code(400).send({ ok: false, error: '收件人不存在' })
     }
     try {
+      const { smtp } = resolveRuntimeSmtp(paths, configuration, {
+        includeResolvedPassword: allowResolvedPassword
+      })
       const senderEmail = configuredSmtpSender(configuration.smtp)
       const delivery = await resolvedEmailTransport.send({
         envelope: {
           from: senderEmail,
           to: recipient.email
         },
-        smtp: configuration.smtp,
+        smtp,
         subject: 'Weather Morning Report SMTP test',
         text: 'Weather Morning Report SMTP test message. If you received this, Email delivery is configured.',
         html: '<p>Weather Morning Report SMTP test message.</p><p>If you received this, Email delivery is configured.</p>'
@@ -379,7 +473,8 @@ const createServiceApp = ({
       }
       return reply.code(200).send({ ok: true, status: 'sent', messageId })
     } catch (error) {
-      const redacted = redactError(error, [env.SMTP_PASSWORD])
+      const managedPasswordPresent = hasStoredSmtpPassword(paths)
+      const redacted = redactError(error, [env.SMTP_PASSWORD, ...(managedPasswordPresent ? [safeLoadStoredPassword(paths)?.password].filter(Boolean) : [])])
       appendSmtpOperationHistory(paths, createSmtpOperationRecord({
         action: 'test-email',
         status: 'failed',
@@ -389,7 +484,7 @@ const createServiceApp = ({
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
-          configuration,
+          configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
           errors: [`发送测试邮件失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)
         })

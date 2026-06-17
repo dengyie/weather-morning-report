@@ -158,6 +158,12 @@ const renderSmtpForm = (values, recipients = []) => renderSection('邮件服务'
     <input type="hidden" name="page_mode" value="configuration">
     <button type="submit">测试 SMTP 连接</button>
   </form>
+  ${values.hasManagedPassword
+    ? `<form method="post" action="/configuration/smtp/clear-password">
+    <input type="hidden" name="page_mode" value="configuration">
+    <button type="submit">清除已保存密码</button>
+  </form>`
+    : ''}
   <form method="post" action="/email/test">
     <input type="hidden" name="page_mode" value="configuration">
     <label>测试收件人<select name="recipient_id"${recipients.length === 0 ? ' disabled' : ''}>${recipients.map((recipient) => `<option value="${escapeHtml(recipient.id)}">${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`).join('')}</select></label>

@@ -1612,6 +1612,19 @@ Done when:
 - CSV export returns a newline-terminated attachment with safe columns;
 - operational history filtering/export stays separate from delivery history.
 
+### Phase 16: Managed SMTP Secret Storage
+
+- Add encrypted service-managed SMTP password storage under `OPENPET_DATA_DIR`.
+- Keep `configuration.json` free of raw SMTP password material.
+- Preserve `SMTP_PASSWORD` as a backward-compatible fallback when no managed secret exists.
+
+Done when:
+
+- SMTP password can be saved into a service-owned encrypted secret store;
+- SMTP transport prefers managed secrets and falls back to `SMTP_PASSWORD`;
+- SMTP password can be explicitly cleared from service storage;
+- configuration, logs, delivery history, and SMTP operational history stay secret-free.
+
 ## 13.21 Phase 14 Development Record
 
 Phase 14 adds persistent SMTP operational history for connection tests and test Emails.
@@ -1677,6 +1690,45 @@ Remaining SMTP work:
 
 - encrypted service-managed SMTP password storage remains out of scope;
 - scheduler worker daemonization remains separate from SMTP operational history.
+
+## 13.23 Phase 16 Development Record
+
+Phase 16 adds service-managed encrypted SMTP password storage with compatibility-preserving runtime fallback.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-16-managed-smtp-secret-storage-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-16-managed-smtp-secret-storage.md`
+- added `service/storage/secret-store.js`
+- updated `service/app.js`
+- updated `service/email/send-now.js`
+- updated `service/email/transports.js`
+- updated `service/views/configuration.js`
+- expanded `tests/email-send-now.test.js`
+- expanded `tests/service-app.test.js`
+
+Operational behavior:
+
+- SMTP metadata remains in `configuration.json`, while raw SMTP password material moves into encrypted service-owned storage under `OPENPET_DATA_DIR`;
+- the service generates a local master key in `.secret-key` and stores encrypted SMTP secret payloads in `secrets.json`;
+- SMTP password resolution now prefers managed decrypted password and falls back to `SMTP_PASSWORD` only when no managed secret exists;
+- `POST /configuration/smtp` stores new passwords in managed secret storage and keeps existing secrets unchanged when the password field is left blank;
+- `POST /configuration/smtp/clear-password` removes the managed password and resets `passwordSaved`;
+- configuration UI shows saved-password state and a clear-password action without rendering decrypted secrets;
+- resolved SMTP passwords are kept out of `configuration.json`, page HTML, delivery history, SMTP operational history, and JSON-stringified injected transport payloads.
+
+Validation coverage:
+
+- secret-store tests cover local key generation, encrypted round-trip, clear flow, and corrupt payload failure handling;
+- SMTP transport tests cover managed-password precedence over `SMTP_PASSWORD`;
+- service route tests cover managed-secret persistence, send-now usage, and clear-password behavior;
+- existing redaction tests remain in place to guard configuration, HTTP error, delivery history, and SMTP operational history secrecy.
+
+Remaining SMTP work:
+
+- external KMS or OS keychain integration remains out of scope;
+- user-facing secret rotation and backup UX remain separate from local key generation;
+- scheduler worker daemonization remains separate from SMTP secret storage.
 
 ## 14. Deliberate Non-Goals
 
