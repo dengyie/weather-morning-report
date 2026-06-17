@@ -8,7 +8,7 @@ const { createDefaultConfiguration } = require('../service/configuration/default
 const { saveConfiguration } = require('../service/storage/configuration-store')
 const { appendDeliveryHistory, deliveryHistoryPath, loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 const { sendEmailNow } = require('../service/email/send-now')
-const { createFakeEmailTransport } = require('../service/email/transports')
+const { createFakeEmailTransport, createSmtpEmailTransport } = require('../service/email/transports')
 
 const withTempServiceDirs = async (runner) => {
   const root = mkdtempSync(path.join(tmpdir(), 'wmr-email-'))
@@ -130,6 +130,7 @@ test('sendEmailNow sends through fake transport and records redacted sent histor
     assert.equal(result.messageId, 'fake-message-1')
     assert.equal(transport.sentMessages.length, 1)
     assert.equal(transport.sentMessages[0].envelope.to, 'mango@example.com')
+    assert.equal(transport.sentMessages[0].smtp.senderEmail, 'sender@example.com')
     assert.match(transport.sentMessages[0].html, /data-email-template="2"/)
 
     const history = loadDeliveryHistory(paths)
@@ -141,6 +142,230 @@ test('sendEmailNow sends through fake transport and records redacted sent histor
     assert.equal(history[0].messageId, 'fake-message-1')
     assert.doesNotMatch(JSON.stringify(history), /<html|super-secret|password/i)
   })
+})
+
+const createNodemailerProbe = () => {
+  const options = []
+  const messages = []
+  return {
+    options,
+    messages,
+    createTransport (transportOptions) {
+      options.push(transportOptions)
+      return {
+        async sendMail (message) {
+          messages.push(message)
+          return { messageId: 'smtp-message-1', accepted: [message.to] }
+        }
+      }
+    }
+  }
+}
+
+test('SMTP transport maps starttls settings and runtime password to nodemailer', async () => {
+  const probe = createNodemailerProbe()
+  const transport = createSmtpEmailTransport({
+    env: { SMTP_PASSWORD: 'runtime-secret', SMTP_TIMEOUT_MS: '1234' },
+    createTransport: probe.createTransport
+  })
+
+  const result = await transport.send({
+    envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+    subject: 'Weather',
+    text: 'Plain report',
+    html: '<p>HTML report</p>',
+    smtp: {
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'mango',
+      security: 'starttls',
+      senderEmail: 'sender@example.com',
+      passwordSaved: true
+    }
+  })
+
+  assert.equal(result.messageId, 'smtp-message-1')
+  assert.equal(probe.options.length, 1)
+  assert.deepEqual(probe.options[0], {
+    host: 'smtp.example.com',
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    connectionTimeout: 1234,
+    greetingTimeout: 1234,
+    socketTimeout: 1234,
+    auth: {
+      user: 'mango',
+      pass: 'runtime-secret'
+    }
+  })
+  assert.deepEqual(probe.messages[0], {
+    from: 'sender@example.com',
+    to: 'mango@example.com',
+    subject: 'Weather',
+    text: 'Plain report',
+    html: '<p>HTML report</p>'
+  })
+})
+
+test('SMTP transport preserves runtime password exactly', async () => {
+  const probe = createNodemailerProbe()
+  const transport = createSmtpEmailTransport({
+    env: { SMTP_PASSWORD: ' secret with spaces ' },
+    createTransport: probe.createTransport
+  })
+
+  await transport.send({
+    envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+    subject: 'Weather',
+    text: 'Plain report',
+    html: '<p>HTML report</p>',
+    smtp: {
+      host: 'smtp.example.com',
+      port: 587,
+      username: 'mango',
+      security: 'starttls',
+      senderEmail: 'sender@example.com',
+      passwordSaved: true
+    }
+  })
+
+  assert.equal(probe.options[0].auth.pass, ' secret with spaces ')
+})
+
+test('SMTP transport maps ssl and plain security modes without unnecessary auth', async () => {
+  const sslProbe = createNodemailerProbe()
+  const sslTransport = createSmtpEmailTransport({ env: {}, createTransport: sslProbe.createTransport })
+  await sslTransport.send({
+    envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+    subject: 'SSL',
+    text: 'SSL',
+    html: '<p>SSL</p>',
+    smtp: {
+      host: 'smtp.example.com',
+      port: 465,
+      username: '',
+      security: 'ssl',
+      senderEmail: 'sender@example.com',
+      passwordSaved: false
+    }
+  })
+  assert.equal(sslProbe.options[0].secure, true)
+  assert.equal('auth' in sslProbe.options[0], false)
+
+  const plainProbe = createNodemailerProbe()
+  const plainTransport = createSmtpEmailTransport({ env: {}, createTransport: plainProbe.createTransport })
+  await plainTransport.send({
+    envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+    subject: 'Plain',
+    text: 'Plain',
+    html: '<p>Plain</p>',
+    smtp: {
+      host: 'smtp.example.com',
+      port: 25,
+      username: '',
+      security: 'plain',
+      senderEmail: 'sender@example.com',
+      passwordSaved: false
+    }
+  })
+  assert.equal(plainProbe.options[0].secure, false)
+  assert.equal(plainProbe.options[0].ignoreTLS, true)
+})
+
+test('SMTP transport rejects missing required configuration before creating a client', async () => {
+  const probe = createNodemailerProbe()
+  const transport = createSmtpEmailTransport({
+    env: {},
+    createTransport: probe.createTransport
+  })
+
+  await assert.rejects(
+    transport.send({
+      envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+      subject: 'Weather',
+      text: 'Plain report',
+      html: '<p>HTML report</p>',
+      smtp: {
+        host: '',
+        port: 587,
+        username: 'mango',
+        security: 'starttls',
+        senderEmail: 'sender@example.com',
+        passwordSaved: false
+      }
+    }),
+    /SMTP host is required/
+  )
+  await assert.rejects(
+    transport.send({
+      envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+      subject: 'Weather',
+      text: 'Plain report',
+      html: '<p>HTML report</p>',
+      smtp: {
+        host: 'smtp.example.com',
+        port: 'bad-port',
+        username: 'mango',
+        security: 'starttls',
+        senderEmail: 'sender@example.com',
+        passwordSaved: false
+      }
+    }),
+    /SMTP port is invalid/
+  )
+  await assert.rejects(
+    transport.send({
+      envelope: { from: '', to: 'mango@example.com' },
+      subject: 'Weather',
+      text: 'Plain report',
+      html: '<p>HTML report</p>',
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        username: 'mango',
+        security: 'starttls',
+        senderEmail: '',
+        passwordSaved: false
+      }
+    }),
+    /SMTP sender email is required/
+  )
+  await assert.rejects(
+    transport.send({
+      envelope: { from: 'weather-morning-report@localhost', to: 'mango@example.com' },
+      subject: 'Weather',
+      text: 'Plain report',
+      html: '<p>HTML report</p>',
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        username: '',
+        security: 'starttls',
+        senderEmail: '',
+        passwordSaved: false
+      }
+    }),
+    /SMTP sender email is required/
+  )
+  await assert.rejects(
+    transport.send({
+      envelope: { from: 'sender@example.com', to: 'mango@example.com' },
+      subject: 'Weather',
+      text: 'Plain report',
+      html: '<p>HTML report</p>',
+      smtp: {
+        host: 'smtp.example.com',
+        port: 587,
+        username: 'mango',
+        security: 'starttls',
+        senderEmail: 'sender@example.com',
+        passwordSaved: true
+      }
+    }),
+    /SMTP password is required/
+  )
+  assert.equal(probe.options.length, 0)
 })
 
 test('sendEmailNow records failed transport errors without leaking secrets', async () => {
