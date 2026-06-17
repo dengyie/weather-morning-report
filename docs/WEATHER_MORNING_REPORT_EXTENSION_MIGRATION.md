@@ -915,6 +915,19 @@ Done when:
 - confirmed cleanup deletes only known Weather service-owned files;
 - package validation covers lifecycle command paths.
 
+### Phase 11: Real SMTP Transport
+
+- Activate real SMTP delivery for service-backed send-now and scheduler delivery paths.
+- Keep fake transport injection for tests.
+- Keep SMTP password material runtime-only.
+
+Done when:
+
+- default service Email transport maps SMTP configuration to a real SMTP client;
+- `plain`, `starttls`, and `ssl` modes are covered by tests;
+- missing SMTP host, sender, or required runtime password fails safely;
+- delivery history and HTTP responses do not expose SMTP secrets.
+
 ## 13.1 Recommended Implementation Order
 
 The safest development order is:
@@ -1383,6 +1396,58 @@ Remaining lifecycle work:
 - OpenPet does not yet expose a dedicated `entries.cleanup` lifecycle runner, so cleanup remains a normal command entry;
 - uninstall automation and third-party account cleanup remain outside this repository-owned phase;
 - dependency installation remains the host/development setup responsibility, not an install-time side effect.
+
+## 13.14 Phase 11 Planned Real SMTP Transport
+
+Phase 11 should replace the service's unavailable default Email transport with a real SMTP adapter while preserving fake transport injection for deterministic tests.
+
+Planned behavior:
+
+- `createServiceApp` should default to an SMTP transport for `/email/send-now`;
+- fake transport injection should remain supported for service and unit tests;
+- SMTP configuration should be read from service-owned configuration, while raw password material remains runtime-only through `SMTP_PASSWORD`;
+- `plain`, `starttls`, and `ssl` security modes should map explicitly to SMTP client options;
+- timeout should be configurable with `SMTP_TIMEOUT_MS`;
+- missing SMTP host, sender identity, or required runtime password should fail with redacted error handling.
+
+## 13.15 Phase 11 Development Record
+
+Phase 11 activates real SMTP delivery for the service Email send-now path without changing the persisted secret policy.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-11-real-smtp-transport-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-11-real-smtp-transport.md`
+- updated `service/email/transports.js`
+- updated `service/email/send-now.js`
+- updated `service/app.js`
+- added `nodemailer` dependency
+
+SMTP runtime behavior:
+
+- `createServiceApp` now defaults to `createSmtpEmailTransport({ env })` when no test transport is injected;
+- `sendEmailNow` passes `configuration.smtp` to the transport while continuing to own recipient lookup, rendering, history, and redacted failure records;
+- SMTP password material is read from `SMTP_PASSWORD`, not from `configuration.json`;
+- `SMTP_TIMEOUT_MS` controls connection, greeting, and socket timeouts, with a 10000 ms default;
+- `starttls` maps to `secure: false` and `requireTLS: true`;
+- `ssl` maps to `secure: true`;
+- `plain` maps to `secure: false` and `ignoreTLS: true`;
+- missing SMTP host, invalid port, missing configured sender identity, or required runtime password fails before creating the SMTP client;
+- runtime SMTP password values are passed through exactly as provided by `SMTP_PASSWORD`.
+
+Validation coverage:
+
+- SMTP transport tests cover security mode mapping, auth mapping, timeout mapping, and missing configuration;
+- SMTP transport tests cover invalid persisted port values, configured sender identity enforcement, and exact runtime password preservation;
+- send-now tests assert SMTP configuration is passed to transports without storing raw password material;
+- service route tests assert the default send-now path uses the SMTP transport factory when no fake transport is injected;
+- existing fake transport route tests remain in place.
+
+Remaining SMTP work:
+
+- encrypted service-managed SMTP password storage remains out of scope;
+- dashboard test-connection/test-email UX remains a future phase;
+- scheduler worker daemonization remains separate from this transport activation.
 
 ## 14. Deliberate Non-Goals
 

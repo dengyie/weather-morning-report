@@ -117,6 +117,7 @@ const sendEmailNow = async ({
         from: senderEmail,
         to: recipient.email
       },
+      smtp: configuration.smtp,
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html

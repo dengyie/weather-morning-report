@@ -546,6 +546,65 @@ test('email send-now route sends through injected transport and records history'
   })
 })
 
+test('email send-now route uses SMTP transport factory by default', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const sentMessages = []
+    let factoryCalls = 0
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'runtime-secret'
+      },
+      createEmailTransport: ({ env }) => {
+        factoryCalls += 1
+        assert.equal(env.SMTP_PASSWORD, 'runtime-secret')
+        return {
+          async send (message) {
+            sentMessages.push(message)
+            return { messageId: 'smtp-route-message-1' }
+          }
+        }
+      },
+      fetchEmailReport: async () => ({
+        snapshot: createEmailSnapshot(),
+        advice: createEmailAdvice(),
+        cached: false
+      })
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/send-now',
+      payload: 'recipient_id=recipient-1&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().messageId, 'smtp-route-message-1')
+    assert.equal(factoryCalls, 1)
+    assert.equal(sentMessages.length, 1)
+    assert.equal(sentMessages[0].smtp.host, 'smtp.example.com')
+    assert.equal(sentMessages[0].smtp.username, 'mango')
+    assert.equal(sentMessages[0].smtp.passwordSaved, true)
+    assert.doesNotMatch(JSON.stringify(sentMessages), /runtime-secret/)
+  })
+})
+
 test('email send-now route rejects unknown recipients safely', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({

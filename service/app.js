@@ -5,7 +5,7 @@ const { renderEmailReport } = require('../rendering/email-renderer')
 const { ensureServicePaths } = require('./paths')
 const { validateBranding, validateDefaults, validateManualPreview, validateNotifications, validateRecipient, validateSchedule, validateSmtp } = require('./configuration/validation')
 const { defaultFetchReport, redactError, sendEmailNow } = require('./email/send-now')
-const { createUnavailableEmailTransport } = require('./email/transports')
+const { createSmtpEmailTransport } = require('./email/transports')
 const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./storage/configuration-store')
 const { renderConfigurationPage } = require('./views/configuration')
 const { renderDashboardPage } = require('./views/dashboard')
@@ -19,8 +19,15 @@ const { version } = require('../package.json')
 const findRecipient = (configuration, recipientId) => configuration.recipients
   .find((recipient) => recipient.id === recipientId && !recipient.archivedAt)
 
-const createServiceApp = ({ env = process.env, emailTransport = createUnavailableEmailTransport(), fetchEmailReport = defaultFetchReport, schedulerNow = () => new Date() } = {}) => {
+const createServiceApp = ({
+  env = process.env,
+  emailTransport,
+  createEmailTransport = createSmtpEmailTransport,
+  fetchEmailReport = defaultFetchReport,
+  schedulerNow = () => new Date()
+} = {}) => {
   const paths = ensureServicePaths(env)
+  const resolvedEmailTransport = emailTransport || createEmailTransport({ env })
   const app = fastify({ logger: false })
 
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
@@ -199,7 +206,7 @@ const createServiceApp = ({ env = process.env, emailTransport = createUnavailabl
         paths,
         recipientId: request.body?.recipient_id,
         reportType: request.body?.report_type || 'morning',
-        transport: emailTransport,
+        transport: resolvedEmailTransport,
         fetchReport: fetchEmailReport,
         secrets: [env.SMTP_PASSWORD]
       })
