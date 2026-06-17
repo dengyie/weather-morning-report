@@ -7,7 +7,12 @@ const { validateBranding, validateDefaults, validateManualPreview, validateNotif
 const { defaultFetchReport, redactError, sendEmailNow } = require('./email/send-now')
 const { createSmtpEmailTransport } = require('./email/transports')
 const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./storage/configuration-store')
-const { appendSmtpOperationHistory, loadSmtpOperationHistory } = require('./storage/smtp-operation-history-store')
+const {
+  appendSmtpOperationHistory,
+  listSmtpOperationHistory,
+  loadSmtpOperationHistory,
+  serializeSmtpOperationHistoryCsv
+} = require('./storage/smtp-operation-history-store')
 const { renderConfigurationPage } = require('./views/configuration')
 const { renderDashboardPage } = require('./views/dashboard')
 const { renderEmailPreviewPage } = require('./views/email-preview')
@@ -29,6 +34,12 @@ const configuredSmtpSender = (smtp = {}) => {
 const isConfigurationPageMode = (body = {}) => body?.page_mode === 'configuration'
 
 const configurationNoticeLocation = (message) => `/configuration?smtp_notice=${encodeURIComponent(message)}`
+
+const smtpOperationHistoryFiltersFromQuery = (query = {}) => ({
+  action: query.smtp_action,
+  status: query.smtp_status,
+  recipientId: query.smtp_recipient_id
+})
 
 let smtpOperationSequence = 0
 
@@ -86,14 +97,42 @@ const createServiceApp = ({
 
   app.get('/configuration', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
-    const smtpOperations = loadSmtpOperationHistory(paths)
+    const { filters, records } = listSmtpOperationHistory(paths, smtpOperationHistoryFiltersFromQuery(_request.query), {
+      allowedRecipientIds: configuration.recipients.map((recipient) => recipient.id)
+    })
     reply.type('text/html; charset=utf-8')
     const notice = String(_request.query?.smtp_notice || '').trim()
     return renderConfigurationPage({
       configuration,
       notices: notice ? [notice] : [],
-      smtpOperations
+      smtpOperations: records,
+      smtpHistoryFilters: filters
     })
+  })
+
+  app.get('/configuration/smtp/history/export', async (request, reply) => {
+    const configuration = loadConfiguration(paths)
+    const { filters, records } = listSmtpOperationHistory(paths, smtpOperationHistoryFiltersFromQuery(request.query), {
+      allowedRecipientIds: configuration.recipients.map((recipient) => recipient.id)
+    })
+    const format = String(request.query?.format || '').trim().toLowerCase()
+
+    if (format === 'json') {
+      return reply
+        .type('application/json; charset=utf-8')
+        .code(200)
+        .send({ ok: true, filters, records })
+    }
+
+    if (format === 'csv') {
+      return reply
+        .type('text/csv; charset=utf-8')
+        .header('content-disposition', 'attachment; filename="smtp-operational-history.csv"')
+        .code(200)
+        .send(serializeSmtpOperationHistoryCsv(records))
+    }
+
+    return reply.code(400).send({ ok: false, error: 'Unsupported SMTP history export format' })
   })
 
   app.get('/logs', async (_request, reply) => {

@@ -466,6 +466,195 @@ test('configuration page renders recent SMTP operational history', async () => {
   })
 })
 
+test('configuration page filters SMTP operational history and preserves selected filters', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        },
+        async send () {
+          return { messageId: 'smtp-test-message-1' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration?smtp_action=test-email&smtp_status=sent&smtp_recipient_id=recipient-1' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /name="smtp_action"/)
+    assert.match(page.body, /option value="test-email" selected/)
+    assert.match(page.body, /option value="sent" selected/)
+    assert.match(page.body, /option value="recipient-1" selected/)
+    assert.match(page.body, /test-email · sent/)
+    assert.doesNotMatch(page.body, /test-connection · connected/)
+  })
+})
+
+test('SMTP operational history JSON export honors active filters', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        },
+        async send () {
+          return { messageId: 'smtp-test-message-1' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/configuration/smtp/history/export?format=json&smtp_action=test-email&smtp_status=sent&smtp_recipient_id=recipient-1'
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.headers['content-type'], /application\/json/)
+    assert.equal(response.json().ok, true)
+    assert.deepEqual(response.json().filters, {
+      action: 'test-email',
+      status: 'sent',
+      recipientId: 'recipient-1'
+    })
+    assert.deepEqual(response.json().records.map((record) => record.action), ['test-email'])
+    assert.deepEqual(response.json().records.map((record) => record.status), ['sent'])
+  })
+})
+
+test('SMTP operational history CSV export honors active filters and downloads as attachment', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        },
+        async send () {
+          return { messageId: 'smtp-test-message-1' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/configuration/smtp/history/export?format=csv&smtp_action=test-email&smtp_status=sent&smtp_recipient_id=recipient-1'
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.match(response.headers['content-type'], /text\/csv/)
+    assert.match(response.headers['content-disposition'] || '', /attachment;/)
+    assert.match(response.body, /^id,createdAt,action,status,recipientId,recipientName,recipientEmail,messageId,error\n/)
+    assert.match(response.body, /test-email/)
+    assert.doesNotMatch(response.body, /test-connection/)
+    assert.match(response.body, /\n$/)
+  })
+})
+
+test('SMTP operational history export rejects unsupported formats', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/configuration/smtp/history/export?format=xml'
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 400)
+    assert.deepEqual(response.json(), { ok: false, error: 'Unsupported SMTP history export format' })
+  })
+})
+
 test('smtp test connection route verifies current configuration without sending email', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const calls = []
