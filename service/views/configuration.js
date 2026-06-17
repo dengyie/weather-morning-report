@@ -1,5 +1,6 @@
 const { LANGUAGES, REPORT_TYPES, SEND_POLICIES, SMTP_SECURITY_MODES } = require('../configuration/defaults')
 const { checked, escapeHtml, renderPage, selected } = require('./layout')
+const { SMTP_OPERATION_ACTIONS, SMTP_OPERATION_STATUSES } = require('../storage/smtp-operation-history-store')
 
 const REPORT_TYPE_LABELS = {
   morning: '晨间早报',
@@ -21,6 +22,19 @@ const SMTP_SECURITY_LABELS = {
   starttls: 'STARTTLS',
   ssl: 'SSL/TLS',
   plain: 'Plain'
+}
+
+const SMTP_OPERATION_ACTION_LABELS = {
+  all: '全部操作',
+  'test-connection': 'SMTP 连接测试',
+  'test-email': '测试邮件'
+}
+
+const SMTP_OPERATION_STATUS_LABELS = {
+  all: '全部状态',
+  connected: '已连接',
+  sent: '已发送',
+  failed: '失败'
 }
 
 const renderOptions = (options, currentValue, labels = {}) => options
@@ -54,6 +68,32 @@ const renderSmtpOperations = (operations = []) => `<div class="history-list">
       ${operation.error ? `<p>${escapeHtml(operation.error)}</p>` : ''}
     </article>`).join('')}
 </div>`
+
+const renderSmtpOperationFilters = (filters = {}, recipients = []) => {
+  const query = new URLSearchParams({
+    format: 'json',
+    smtp_action: filters.action || 'all',
+    smtp_status: filters.status || 'all',
+    smtp_recipient_id: filters.recipientId || 'all'
+  }).toString()
+  const csvQuery = new URLSearchParams({
+    format: 'csv',
+    smtp_action: filters.action || 'all',
+    smtp_status: filters.status || 'all',
+    smtp_recipient_id: filters.recipientId || 'all'
+  }).toString()
+
+  return `<form class="form-grid" method="get" action="/configuration">
+    <label>操作类型<select name="smtp_action">${renderOptions(SMTP_OPERATION_ACTIONS, filters.action || 'all', SMTP_OPERATION_ACTION_LABELS)}</select></label>
+    <label>执行状态<select name="smtp_status">${renderOptions(SMTP_OPERATION_STATUSES, filters.status || 'all', SMTP_OPERATION_STATUS_LABELS)}</select></label>
+    <label>收件人<select name="smtp_recipient_id"><option value="all"${selected(filters.recipientId || 'all', 'all')}>全部收件人</option>${recipients.map((recipient) => `<option value="${escapeHtml(recipient.id)}"${selected(filters.recipientId, recipient.id)}>${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`).join('')}</select></label>
+    <div class="button-row">
+      <button type="submit">筛选历史</button>
+      <a class="button-link secondary" href="/configuration/smtp/history/export?${escapeHtml(query)}">导出 JSON</a>
+      <a class="button-link secondary" href="/configuration/smtp/history/export?${escapeHtml(csvQuery)}">导出 CSV</a>
+    </div>
+  </form>`
+}
 
 const renderNotices = (notices = [], type) => notices.length === 0
   ? ''
@@ -153,7 +193,7 @@ const renderNotificationsForm = (values) => renderSection('通知与数据保留
   <button type="submit">保存通知设置</button>
 </form>`)
 
-const renderConfigurationPage = ({ configuration, errors = [], notices = [], smtpOperations = [], values = {} }) => renderPage({
+const renderConfigurationPage = ({ configuration, errors = [], notices = [], smtpOperations = [], smtpHistoryFilters = {}, values = {} }) => renderPage({
   title: '天气早报配置中心',
   activePath: '/configuration',
   body: `<section class="hero config-hero">
@@ -170,6 +210,7 @@ const renderConfigurationPage = ({ configuration, errors = [], notices = [], smt
   ${renderSmtpForm(values.smtp || configuration.smtp, configuration.recipients)}
   <section class="card workbench-card">
     <div class="section-head"><div><h2>SMTP operational history</h2><p class="muted">最近的连接测试和测试邮件结果。</p></div></div>
+    ${renderSmtpOperationFilters(smtpHistoryFilters, configuration.recipients)}
     ${renderSmtpOperations(smtpOperations)}
   </section>
   ${renderProviders(configuration.providers)}

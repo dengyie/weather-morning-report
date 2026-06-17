@@ -1599,6 +1599,19 @@ Planned behavior:
 - configuration page should render recent SMTP operational history in the SMTP section;
 - operational history should remain separate from delivery history and redact runtime SMTP secrets.
 
+### Phase 15: SMTP Operational History Filter/Export
+
+- Add conservative filtering for SMTP operational history in the configuration page.
+- Add filtered JSON and CSV export endpoints for SMTP operational history.
+- Keep exported operational history redacted and service-owned.
+
+Done when:
+
+- configuration page can filter SMTP operational history by action, status, and recipient;
+- JSON export returns the currently filtered SMTP operational history;
+- CSV export returns a newline-terminated attachment with safe columns;
+- operational history filtering/export stays separate from delivery history.
+
 ## 13.21 Phase 14 Development Record
 
 Phase 14 adds persistent SMTP operational history for connection tests and test Emails.
@@ -1630,7 +1643,39 @@ Validation coverage:
 Remaining SMTP work:
 
 - encrypted service-managed SMTP password storage remains out of scope;
-- richer filtering/export for SMTP operational history remains future work;
+- scheduler worker daemonization remains separate from SMTP operational history.
+
+## 13.22 Phase 15 Development Record
+
+Phase 15 adds conservative filtering and export for SMTP operational history in the configuration workbench.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-15-smtp-history-filter-export-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-15-smtp-history-filter-export.md`
+- updated `service/storage/smtp-operation-history-store.js`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+- expanded `tests/email-send-now.test.js`
+- expanded `tests/service-app.test.js`
+
+Operational behavior:
+
+- configuration page can filter SMTP operational history by action, status, and recipient;
+- JSON export returns the currently filtered SMTP operational history;
+- CSV export returns a newline-terminated attachment with safe columns;
+- operational history filtering and export remain separate from delivery history.
+
+Validation coverage:
+
+- store tests cover SMTP operational history filtering and CSV serialization;
+- service route tests cover filtered configuration rendering;
+- service route tests cover filtered JSON and CSV export behavior;
+- existing delivery-history tests remain in place to guard separation from weather report delivery history.
+
+Remaining SMTP work:
+
+- encrypted service-managed SMTP password storage remains out of scope;
 - scheduler worker daemonization remains separate from SMTP operational history.
 
 ## 14. Deliberate Non-Goals

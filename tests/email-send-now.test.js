@@ -7,7 +7,13 @@ const assert = require('node:assert/strict')
 const { createDefaultConfiguration } = require('../service/configuration/defaults')
 const { saveConfiguration } = require('../service/storage/configuration-store')
 const { appendDeliveryHistory, deliveryHistoryPath, loadDeliveryHistory } = require('../service/storage/delivery-history-store')
-const { appendSmtpOperationHistory, loadSmtpOperationHistory, smtpOperationHistoryPath } = require('../service/storage/smtp-operation-history-store')
+const {
+  appendSmtpOperationHistory,
+  filterSmtpOperationHistory,
+  loadSmtpOperationHistory,
+  serializeSmtpOperationHistoryCsv,
+  smtpOperationHistoryPath
+} = require('../service/storage/smtp-operation-history-store')
 const { sendEmailNow } = require('../service/email/send-now')
 const { createFakeEmailTransport, createSmtpEmailTransport } = require('../service/email/transports')
 
@@ -124,6 +130,42 @@ test('SMTP operational history storage creates bounded newest-last records', asy
     assert.deepEqual(loadSmtpOperationHistory(paths).map((record) => record.id), ['smtp-op-2', 'smtp-op-3'])
     assert.match(readFileSync(smtpOperationHistoryPath(paths), 'utf8'), /\n$/)
   })
+})
+
+test('SMTP operational history filters by action status and recipient', () => {
+  const records = [
+    { id: 'smtp-op-1', action: 'test-connection', status: 'connected' },
+    { id: 'smtp-op-2', action: 'test-email', status: 'sent', recipientId: 'recipient-1' },
+    { id: 'smtp-op-3', action: 'test-email', status: 'failed', recipientId: 'recipient-2' }
+  ]
+
+  const filtered = filterSmtpOperationHistory(records, {
+    action: 'test-email',
+    status: 'failed',
+    recipientId: 'recipient-2'
+  })
+
+  assert.deepEqual(filtered.map((record) => record.id), ['smtp-op-3'])
+})
+
+test('SMTP operational history CSV export includes a header row and newline terminator', () => {
+  const csv = serializeSmtpOperationHistoryCsv([
+    {
+      id: 'smtp-op-1',
+      createdAt: '2026-06-17T08:00:00.000Z',
+      action: 'test-connection',
+      status: 'connected',
+      recipientId: '',
+      recipientName: '',
+      recipientEmail: '',
+      messageId: '',
+      error: ''
+    }
+  ])
+
+  assert.match(csv, /^id,createdAt,action,status,recipientId,recipientName,recipientEmail,messageId,error\n/)
+  assert.match(csv, /smtp-op-1/)
+  assert.match(csv, /\n$/)
 })
 
 test('sendEmailNow sends through fake transport and records redacted sent history', async () => {
