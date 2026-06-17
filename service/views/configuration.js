@@ -87,7 +87,7 @@ const renderSchedules = (configuration, values = {}) => renderSection('发送计
       <p>${escapeHtml(SEND_POLICY_LABELS[schedule.sendPolicy] || schedule.sendPolicy)} · ${schedule.enabled ? '启用' : '停用'}</p>
     </article>`).join('')}`)
 
-const renderSmtpForm = (values) => renderSection('邮件服务', 'SMTP 连接元数据和发件身份。', `<p class="muted">密码状态：${values.passwordSaved ? '已保存，留空保持不变' : '尚未保存 SMTP 密码'}</p>
+const renderSmtpForm = (values, recipients = []) => renderSection('邮件服务', 'SMTP 连接元数据和发件身份。', `<p class="muted">密码状态：${values.passwordSaved ? '已保存，留空保持不变' : '尚未保存 SMTP 密码'}</p>
 <form class="form-grid" method="post" action="/configuration/smtp">
   <label>SMTP Host<input name="host" value="${escapeHtml(values.host)}"></label>
   <label>端口<input name="port" value="${escapeHtml(values.port)}" inputmode="numeric" required></label>
@@ -96,7 +96,17 @@ const renderSmtpForm = (values) => renderSection('邮件服务', 'SMTP 连接元
   <label>安全方式<select name="security">${renderOptions(SMTP_SECURITY_MODES, values.security, SMTP_SECURITY_LABELS)}</select></label>
   <label>发件邮箱<input type="email" name="sender_email" value="${escapeHtml(values.senderEmail)}"></label>
   <button type="submit">保存邮件服务</button>
-</form>`)
+</form>
+<div class="quick-actions">
+  <form method="post" action="/configuration/smtp/test-connection">
+    <button type="submit">测试 SMTP 连接</button>
+  </form>
+  <form method="post" action="/email/test">
+    <label>测试收件人<select name="recipient_id"${recipients.length === 0 ? ' disabled' : ''}>${recipients.map((recipient) => `<option value="${escapeHtml(recipient.id)}">${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`).join('')}</select></label>
+    <button type="submit"${recipients.length === 0 ? ' disabled' : ''}>发送测试邮件</button>
+  </form>
+</div>
+${recipients.length === 0 ? '<p class="muted">添加收件人后即可发送测试邮件。</p>' : ''}`)
 
 const renderProviders = (providers) => renderSection('天气数据源', 'Provider 优先级与健康状态。', providers
   .map((provider) => `<article class="record-card">
@@ -138,7 +148,7 @@ const renderConfigurationPage = ({ configuration, errors = [], values = {} }) =>
   ${renderRecipientForm(values.recipient)}
   ${renderRecipients(configuration.recipients)}
   ${renderSchedules(configuration, values.schedule)}
-  ${renderSmtpForm(values.smtp || configuration.smtp)}
+  ${renderSmtpForm(values.smtp || configuration.smtp, configuration.recipients)}
   ${renderProviders(configuration.providers)}
   ${renderBrandingForm(values.branding || configuration.branding)}
   ${renderNotificationsForm(values.notifications || configuration.notifications)}`

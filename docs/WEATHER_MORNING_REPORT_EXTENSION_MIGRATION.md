@@ -928,6 +928,19 @@ Done when:
 - missing SMTP host, sender, or required runtime password fails safely;
 - delivery history and HTTP responses do not expose SMTP secrets.
 
+### Phase 12: SMTP Operational Tests
+
+- Add SMTP test connection.
+- Add operational test Email.
+- Expose both actions from the configuration page.
+
+Done when:
+
+- SMTP connection verification uses the same transport configuration path as sending;
+- test Email sends a short operational message to a selected recipient;
+- test Email does not write delivery history records;
+- failures redact runtime SMTP secrets.
+
 ## 13.1 Recommended Implementation Order
 
 The safest development order is:
@@ -1448,6 +1461,61 @@ Remaining SMTP work:
 - encrypted service-managed SMTP password storage remains out of scope;
 - dashboard test-connection/test-email UX remains a future phase;
 - scheduler worker daemonization remains separate from this transport activation.
+
+## 13.16 Phase 12 Planned SMTP Operational Tests
+
+Phase 12 should add operator-facing SMTP test connection and test Email actions now that the real SMTP transport exists.
+
+Planned behavior:
+
+- `POST /configuration/smtp/test-connection` should verify the current SMTP configuration through the active transport;
+- `POST /email/test` should send a short operational Email to a selected recipient;
+- test Email should not create delivery history records because it is not a weather report delivery;
+- configuration page should expose both actions near the SMTP settings;
+- failures should redact `SMTP_PASSWORD` and other known secret values from JSON responses.
+
+## 13.17 Phase 12 Development Record
+
+Phase 12 adds SMTP operational tests for the dashboard/service path.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-12-smtp-operational-tests-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-12-smtp-operational-tests.md`
+- updated `service/email/transports.js`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+
+Operational behavior:
+
+- SMTP transport now exposes `verify(message)` using the same option-building path as `send(message)`;
+- `POST /configuration/smtp/test-connection` calls the active transport `verify()` and returns `{ ok: true, status: "connected" }` on success;
+- test connection failures return redacted 502 JSON;
+- `POST /email/test` sends a short SMTP operational test message to a selected recipient;
+- test Email includes SMTP configuration in the transport message but does not append delivery history records;
+- both operational routes require a configured sender identity before calling injected transports, avoiding fake success when SMTP sender config is missing;
+- the configuration page renders a test connection form and recipient-select test Email form inside the SMTP section.
+
+Validation coverage:
+
+- SMTP transport tests cover `verify()` option mapping and client verification;
+- service route tests cover test connection success without sending Email;
+- service route tests cover redacted test connection failures;
+- service route tests cover missing sender rejection before `verify()` or `send()` side effects;
+- service route tests cover test Email success and no delivery history write;
+- configuration page tests cover operational action controls.
+
+Production review:
+
+- Ran `/Users/mango/.agents/skills/production-code-quality-review/scripts/collect-review-context.py` and reviewed Phase 12 against `origin/codex/phase-11-real-smtp-transport`.
+- Confirmed and fixed one issue: route-level SMTP operational checks could pass under injected transports without a configured sender.
+- Re-ran focused RED/GREEN tests and the full phase verification gate.
+
+Remaining SMTP work:
+
+- encrypted service-managed SMTP password storage remains out of scope;
+- richer dashboard status rendering for operation results remains future UI work;
+- scheduler worker daemonization remains separate from SMTP operational checks.
 
 ## 14. Deliberate Non-Goals
 

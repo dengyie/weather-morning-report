@@ -370,6 +370,153 @@ test('smtp form never echoes submitted password', async () => {
   })
 })
 
+test('configuration page renders SMTP operational controls', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /action="\/configuration\/smtp\/test-connection"/)
+    assert.match(page.body, /action="\/email\/test"/)
+    assert.match(page.body, /value="recipient-1"/)
+  })
+})
+
+test('smtp test connection route verifies current configuration without sending email', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const calls = []
+    const transport = {
+      async verify (message) {
+        calls.push(message)
+        return { ok: true }
+      },
+      async send () {
+        throw new Error('test connection must not send email')
+      }
+    }
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'runtime-secret'
+      },
+      emailTransport: transport
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(response.json(), { ok: true, status: 'connected' })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].smtp.host, 'smtp.example.com')
+    assert.equal(calls[0].smtp.passwordSaved, true)
+    assert.doesNotMatch(JSON.stringify(calls), /runtime-secret/)
+  })
+})
+
+test('smtp test connection route redacts transport failures', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'runtime-secret'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      emailTransport: {
+        async verify () {
+          throw new Error(`SMTP auth failed for ${secret}`)
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /\[redacted\]/)
+    assert.doesNotMatch(response.body, new RegExp(secret))
+  })
+})
+
+test('smtp test connection route rejects missing configured sender before transport verify', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    let verifyCalls = 0
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          verifyCalls += 1
+          return { ok: true }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=&password=&security=starttls&sender_email=',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /SMTP sender email is required/)
+    assert.equal(verifyCalls, 0)
+  })
+})
+
 test('branding form rejects invalid accent color', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
@@ -602,6 +749,103 @@ test('email send-now route uses SMTP transport factory by default', async () => 
     assert.equal(sentMessages[0].smtp.username, 'mango')
     assert.equal(sentMessages[0].smtp.passwordSaved, true)
     assert.doesNotMatch(JSON.stringify(sentMessages), /runtime-secret/)
+  })
+})
+
+test('email test route sends operational test message without delivery history', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const sentMessages = []
+    const transport = {
+      async send (message) {
+        sentMessages.push(message)
+        return { messageId: 'smtp-test-message-1' }
+      }
+    }
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'runtime-secret'
+      },
+      emailTransport: transport
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadDeliveryHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(response.json(), { ok: true, status: 'sent', messageId: 'smtp-test-message-1' })
+    assert.equal(sentMessages.length, 1)
+    assert.equal(sentMessages[0].envelope.from, 'sender@example.com')
+    assert.equal(sentMessages[0].envelope.to, 'mango@example.com')
+    assert.equal(sentMessages[0].smtp.host, 'smtp.example.com')
+    assert.match(sentMessages[0].subject, /SMTP test/)
+    assert.match(sentMessages[0].text, /Weather Morning Report SMTP test/)
+    assert.deepEqual(history, [])
+    assert.doesNotMatch(JSON.stringify(sentMessages), /runtime-secret/)
+  })
+})
+
+test('email test route rejects missing configured sender before transport send', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    let sendCalls = 0
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async send () {
+          sendCalls += 1
+          return { messageId: 'unexpected' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=&password=&security=starttls&sender_email=',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /SMTP sender email is required/)
+    assert.equal(sendCalls, 0)
   })
 })
 
