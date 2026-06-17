@@ -10,6 +10,7 @@ const { loadConfiguration, readRecentLogs, saveConfiguration } = require('./stor
 const {
   clearStoredSmtpPassword,
   hasStoredSmtpPassword,
+  inspectSecretHealth,
   loadStoredSmtpPassword,
   saveStoredSmtpPassword
 } = require('./storage/secret-store')
@@ -56,6 +57,11 @@ const smtpStateForView = (configuration, { hasManagedPassword = false } = {}) =>
 const configurationForView = (configuration, smtpState) => ({
   ...configuration,
   smtp: smtpState
+})
+
+const configurationViewModel = (configuration, { hasManagedPassword = false, secretHealth } = {}) => ({
+  ...configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword })),
+  secretHealth
 })
 
 const withResolvedPassword = (smtp, password) => {
@@ -129,6 +135,21 @@ const createServiceApp = ({
   const allowResolvedPassword = !emailTransport
   const app = fastify({ logger: false })
 
+  const secretHealthForView = (configuration) => inspectSecretHealth(paths, {
+    backupConfirmed: configuration.notifications.secretKeyBackupConfirmed
+  })
+
+  const configurationModelForView = (configuration, { hasManagedPassword, secretHealth } = {}) => {
+    const resolvedSecretHealth = secretHealth || secretHealthForView(configuration)
+    const resolvedHasManagedPassword = typeof hasManagedPassword === 'boolean'
+      ? hasManagedPassword
+      : resolvedSecretHealth.managedSmtpPassword.present
+    return configurationViewModel(configuration, {
+      hasManagedPassword: resolvedHasManagedPassword,
+      secretHealth: resolvedSecretHealth
+    })
+  }
+
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
     done(null, Object.fromEntries(new URLSearchParams(body || '')))
   })
@@ -153,14 +174,14 @@ const createServiceApp = ({
 
   app.get('/configuration', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
-    const managedPasswordPresent = hasStoredSmtpPassword(paths)
+    const secretHealth = secretHealthForView(configuration)
     const { filters, records } = listSmtpOperationHistory(paths, smtpOperationHistoryFiltersFromQuery(_request.query), {
       allowedRecipientIds: configuration.recipients.map((recipient) => recipient.id)
     })
     reply.type('text/html; charset=utf-8')
     const notice = String(_request.query?.smtp_notice || '').trim()
     return renderConfigurationPage({
-      configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
+      configuration: configurationModelForView(configuration, { secretHealth }),
       notices: notice ? [notice] : [],
       smtpOperations: records,
       smtpHistoryFilters: filters
@@ -219,7 +240,7 @@ const createServiceApp = ({
     const result = validateRecipient(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { recipient: result.values } })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { recipient: result.values } })
     }
     const id = result.value.id || `recipient-${configuration.recipients.length + 1}`
     const recipient = { ...result.value, id }
@@ -233,7 +254,7 @@ const createServiceApp = ({
     const result = validateDefaults(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { defaults: result.values } })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { defaults: result.values } })
     }
     configuration.newUserDefaults = result.value
     saveConfiguration(paths, configuration)
@@ -245,7 +266,7 @@ const createServiceApp = ({
     const result = validateSchedule(request.body, configuration)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { schedule: result.values } })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { schedule: result.values } })
     }
     const id = result.value.id || `schedule-${configuration.schedules.length + 1}`
     const schedule = { ...result.value, id }
@@ -256,12 +277,16 @@ const createServiceApp = ({
 
   app.post('/configuration/smtp', async (request, reply) => {
     const configuration = loadConfiguration(paths)
-    const managedPasswordPresent = hasStoredSmtpPassword(paths)
+    const secretHealth = secretHealthForView(configuration)
+    const managedPasswordPresent = secretHealth.managedSmtpPassword.present
     const result = validateSmtp(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
       return renderConfigurationPage({
-        configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
+        configuration: configurationModelForView(configuration, {
+          hasManagedPassword: managedPasswordPresent,
+          secretHealth
+        }),
         errors: result.errors,
         values: {
           smtp: {
@@ -292,6 +317,26 @@ const createServiceApp = ({
     configuration.smtp = {
       ...configuration.smtp,
       passwordSaved: false
+    }
+    saveConfiguration(paths, configuration)
+    return reply.code(303).header('location', '/configuration').send()
+  })
+
+  app.post('/configuration/secrets/confirm-backup', async (_request, reply) => {
+    const configuration = loadConfiguration(paths)
+    configuration.notifications = {
+      ...configuration.notifications,
+      secretKeyBackupConfirmed: true
+    }
+    saveConfiguration(paths, configuration)
+    return reply.code(303).header('location', '/configuration').send()
+  })
+
+  app.post('/configuration/secrets/revoke-backup-confirmation', async (_request, reply) => {
+    const configuration = loadConfiguration(paths)
+    configuration.notifications = {
+      ...configuration.notifications,
+      secretKeyBackupConfirmed: false
     }
     saveConfiguration(paths, configuration)
     return reply.code(303).header('location', '/configuration').send()
@@ -333,7 +378,7 @@ const createServiceApp = ({
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
-          configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
+          configuration: configurationModelForView(configuration, { hasManagedPassword: managedPasswordPresent }),
           errors: [`测试 SMTP 连接失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)
         })
@@ -347,7 +392,7 @@ const createServiceApp = ({
     const result = validateBranding(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { branding: result.values } })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { branding: result.values } })
     }
     configuration.branding = result.value
     saveConfiguration(paths, configuration)
@@ -359,7 +404,7 @@ const createServiceApp = ({
     const result = validateNotifications(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors, values: { notifications: result.values } })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { notifications: result.values } })
     }
     configuration.notifications = result.value
     saveConfiguration(paths, configuration)
@@ -371,7 +416,7 @@ const createServiceApp = ({
     const result = validateManualPreview(request.body, configuration)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: result.errors })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors })
     }
     reply.type('text/html; charset=utf-8')
     return renderManualPreviewPage({ recipient: result.value.recipient, reportType: result.value.reportType })
@@ -384,7 +429,7 @@ const createServiceApp = ({
     const recipient = findRecipient(configuration, recipientId)
     if (!recipient) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration, errors: ['收件人不存在'] })
+      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
     }
     try {
       const report = await fetchEmailReport({ recipient, reportType, configuration })
@@ -442,7 +487,7 @@ const createServiceApp = ({
       }))
       if (pageMode) {
         reply.code(400).type('text/html; charset=utf-8')
-        return renderConfigurationPage({ configuration, errors: ['收件人不存在'] })
+        return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
       }
       return reply.code(400).send({ ok: false, error: '收件人不存在' })
     }
@@ -484,7 +529,7 @@ const createServiceApp = ({
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
         return renderConfigurationPage({
-          configuration: configurationForView(configuration, smtpStateForView(configuration, { hasManagedPassword: managedPasswordPresent })),
+          configuration: configurationModelForView(configuration, { hasManagedPassword: managedPasswordPresent }),
           errors: [`发送测试邮件失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)
         })
