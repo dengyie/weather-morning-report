@@ -9,6 +9,7 @@ const { saveConfiguration } = require('../service/storage/configuration-store')
 const { appendDeliveryHistory, deliveryHistoryPath, loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 const {
   clearStoredSmtpPassword,
+  inspectSecretHealth,
   loadStoredSmtpPassword,
   saveStoredSmtpPassword,
   secretKeyPath,
@@ -210,6 +211,73 @@ test('managed SMTP secret storage fails safely on corrupt secret payloads', asyn
     require('node:fs').writeFileSync(secretsPath(paths), `${JSON.stringify(secrets, null, 2)}\n`)
 
     assert.throws(() => loadStoredSmtpPassword(paths), /stored SMTP password could not be decrypted/)
+  })
+})
+
+test('secret health reports informational state when no managed secret exists', async () => {
+  await withTempServiceDirs(async (paths) => {
+    assert.deepEqual(inspectSecretHealth(paths, { backupConfirmed: false }), {
+      status: 'not-configured',
+      backupConfirmed: false,
+      warning: '',
+      masterKey: { present: false, valid: false },
+      managedSmtpPassword: { present: false, healthy: false, updatedAt: '' }
+    })
+  })
+})
+
+test('secret health reports healthy managed secret and backup warning state', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password', { now: new Date('2026-06-17T08:00:00.000Z') })
+
+    assert.deepEqual(inspectSecretHealth(paths, { backupConfirmed: false }), {
+      status: 'backup-unconfirmed',
+      backupConfirmed: false,
+      warning: '本地密钥尚未确认备份',
+      masterKey: { present: true, valid: true },
+      managedSmtpPassword: {
+        present: true,
+        healthy: true,
+        updatedAt: '2026-06-17T08:00:00.000Z'
+      }
+    })
+
+    assert.equal(inspectSecretHealth(paths, { backupConfirmed: true }).status, 'healthy')
+  })
+})
+
+test('secret health reports invalid local key without exposing secret material', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    require('node:fs').writeFileSync(secretKeyPath(paths), 'not-valid-base64')
+
+    const health = inspectSecretHealth(paths, { backupConfirmed: false })
+
+    assert.equal(health.status, 'unhealthy')
+    assert.equal(health.masterKey.present, true)
+    assert.equal(health.masterKey.valid, false)
+    assert.equal(health.managedSmtpPassword.present, true)
+    assert.equal(health.managedSmtpPassword.healthy, false)
+    assert.match(health.warning, /本地密钥缺失或无效/)
+    assert.doesNotMatch(JSON.stringify(health), /super-secret-password|not-valid-base64/)
+  })
+})
+
+test('secret health reports corrupt managed SMTP payload without throwing', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    const secrets = JSON.parse(readFileSync(secretsPath(paths), 'utf8'))
+    secrets.smtpPassword.ciphertext = 'not-valid-base64'
+    require('node:fs').writeFileSync(secretsPath(paths), `${JSON.stringify(secrets, null, 2)}\n`)
+
+    const health = inspectSecretHealth(paths, { backupConfirmed: false })
+
+    assert.equal(health.status, 'unhealthy')
+    assert.equal(health.masterKey.valid, true)
+    assert.equal(health.managedSmtpPassword.present, true)
+    assert.equal(health.managedSmtpPassword.healthy, false)
+    assert.match(health.warning, /已保存的 SMTP 密码无法解密/)
+    assert.doesNotMatch(JSON.stringify(health), /super-secret-password|not-valid-base64/)
   })
 })
 

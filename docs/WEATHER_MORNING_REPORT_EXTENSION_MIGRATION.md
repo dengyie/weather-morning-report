@@ -1625,6 +1625,19 @@ Done when:
 - SMTP password can be explicitly cleared from service storage;
 - configuration, logs, delivery history, and SMTP operational history stay secret-free.
 
+### Phase 17: Secret Key Backup And Health UX
+
+- Surface local `.secret-key` and managed SMTP password health on the configuration page.
+- Add explicit backup confirmation and revocation controls for the local key.
+- Keep raw key, raw password, ciphertext, and invalid key payloads non-exportable and hidden from HTML.
+
+Done when:
+
+- configuration page renders secret key and managed SMTP password health;
+- users can mark the local key as backed up and revoke that confirmation;
+- degraded key or managed-secret states render as warnings without crashing the dashboard;
+- health inspection and configuration routes are covered by tests.
+
 ## 13.21 Phase 14 Development Record
 
 Phase 14 adds persistent SMTP operational history for connection tests and test Emails.
@@ -1729,6 +1742,48 @@ Remaining SMTP work:
 - external KMS or OS keychain integration remains out of scope;
 - user-facing secret rotation and backup UX remain separate from local key generation;
 - scheduler worker daemonization remains separate from SMTP secret storage.
+
+## 13.24 Phase 17 Development Record
+
+Phase 17 adds user-facing secret key backup acknowledgement and managed SMTP secret health visibility.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-17-secret-key-backup-and-health-ux-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-17-secret-key-backup-and-health-ux.md`
+- updated `service/storage/secret-store.js`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+- expanded `tests/email-send-now.test.js`
+- expanded `tests/service-app.test.js`
+
+Operational behavior:
+
+- secret storage now exposes `inspectSecretHealth()` for normalized read-only health inspection;
+- health inspection reports local master-key presence/validity, managed SMTP password presence/health, last update time, backup confirmation, and one safe warning string;
+- `GET /configuration` renders a new `密钥与备份状态` section with backup status, degraded-state warnings, and confirmation controls;
+- `POST /configuration/secrets/confirm-backup` records `notifications.secretKeyBackupConfirmed = true`;
+- `POST /configuration/secrets/revoke-backup-confirmation` records `notifications.secretKeyBackupConfirmed = false`;
+- unhealthy local keys or corrupt managed SMTP payloads show warnings without exposing raw secret material.
+
+Security boundary:
+
+- Phase 17 does not export, import, download, rotate, or reveal the local `.secret-key`;
+- page HTML does not include raw SMTP passwords, decrypted passwords, ciphertext, or invalid key file contents;
+- managed password decryption remains local to service runtime flows that need SMTP delivery.
+
+Validation coverage:
+
+- secret-store tests cover no-secret, healthy unconfirmed, healthy confirmed, invalid local key, and corrupt managed SMTP payload states;
+- service route tests cover backup warning rendering, confirmation route toggles, healthy confirmed rendering, and degraded health rendering;
+- focused Phase 17 verification passed with `node --test --test-concurrency=1 tests/email-send-now.test.js tests/service-app.test.js`.
+
+Remaining SMTP work:
+
+- secret key rotation remains out of scope;
+- raw key export/import and downloadable backup files remain intentionally out of scope;
+- external KMS or OS keychain integration remains separate from local key backup UX;
+- scheduler worker daemonization remains separate from secret health UX.
 
 ## 14. Deliberate Non-Goals
 

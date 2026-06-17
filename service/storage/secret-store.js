@@ -39,11 +39,37 @@ const loadOrCreateSecretKey = (paths) => {
   return key
 }
 
+const inspectSecretKey = (paths) => {
+  const file = secretKeyPath(paths)
+  if (!existsSync(file)) {
+    return { present: false, valid: false }
+  }
+  try {
+    const key = decodeBase64(readFileSync(file, 'utf8'), 'SMTP secret key is invalid')
+    return { present: true, valid: key.length === SECRET_KEY_BYTES }
+  } catch {
+    return { present: true, valid: false }
+  }
+}
+
 const loadSecrets = (paths) => {
   const file = secretsPath(paths)
   if (!existsSync(file)) return {}
   const parsed = JSON.parse(readFileSync(file, 'utf8'))
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+}
+
+const inspectSecretsFile = (paths) => {
+  try {
+    return { ok: true, value: loadSecrets(paths) }
+  } catch {
+    return { ok: false, value: null }
+  }
+}
+
+const loadWritableSecrets = (paths) => {
+  const secrets = inspectSecretsFile(paths)
+  return secrets.ok ? secrets.value : {}
 }
 
 const saveSecrets = (paths, secrets) => {
@@ -52,8 +78,12 @@ const saveSecrets = (paths, secrets) => {
 }
 
 const hasStoredSmtpPassword = (paths) => {
-  const secretRecord = loadSecrets(paths).smtpPassword
-  return Boolean(secretRecord && typeof secretRecord === 'object')
+  try {
+    const secretRecord = loadSecrets(paths).smtpPassword
+    return Boolean(secretRecord && typeof secretRecord === 'object')
+  } catch {
+    return true
+  }
 }
 
 const saveStoredSmtpPassword = (paths, password, { now = new Date() } = {}) => {
@@ -62,7 +92,7 @@ const saveStoredSmtpPassword = (paths, password, { now = new Date() } = {}) => {
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   const ciphertext = Buffer.concat([cipher.update(String(password)), cipher.final()])
   const tag = cipher.getAuthTag()
-  const secrets = loadSecrets(paths)
+  const secrets = loadWritableSecrets(paths)
 
   secrets.smtpPassword = {
     algorithm: 'aes-256-gcm',
@@ -78,7 +108,12 @@ const saveStoredSmtpPassword = (paths, password, { now = new Date() } = {}) => {
 }
 
 const loadStoredSmtpPassword = (paths) => {
-  const secretRecord = loadSecrets(paths).smtpPassword
+  let secretRecord
+  try {
+    secretRecord = loadSecrets(paths).smtpPassword
+  } catch {
+    throw new Error(DECRYPTION_ERROR_MESSAGE)
+  }
   if (!secretRecord || typeof secretRecord !== 'object') return null
 
   try {
@@ -118,9 +153,81 @@ const clearStoredSmtpPassword = (paths) => {
   return true
 }
 
+const inspectSecretHealth = (paths, { backupConfirmed = false } = {}) => {
+  const masterKey = inspectSecretKey(paths)
+  const secrets = inspectSecretsFile(paths)
+
+  if (!secrets.ok) {
+    return {
+      status: 'unhealthy',
+      backupConfirmed: Boolean(backupConfirmed),
+      warning: '已保存的 SMTP 密码无法解密',
+      masterKey,
+      managedSmtpPassword: { present: false, healthy: false, updatedAt: '' }
+    }
+  }
+
+  const secretRecord = secrets.value && typeof secrets.value.smtpPassword === 'object'
+    ? secrets.value.smtpPassword
+    : null
+
+  if (!secretRecord) {
+    return {
+      status: 'not-configured',
+      backupConfirmed: Boolean(backupConfirmed),
+      warning: '',
+      masterKey,
+      managedSmtpPassword: { present: false, healthy: false, updatedAt: '' }
+    }
+  }
+
+  if (!masterKey.valid) {
+    return {
+      status: 'unhealthy',
+      backupConfirmed: Boolean(backupConfirmed),
+      warning: '本地密钥缺失或无效',
+      masterKey,
+      managedSmtpPassword: {
+        present: true,
+        healthy: false,
+        updatedAt: secretRecord.updatedAt || ''
+      }
+    }
+  }
+
+  try {
+    const stored = loadStoredSmtpPassword(paths)
+    if (!stored) throw new Error('missing managed SMTP password')
+    return {
+      status: backupConfirmed ? 'healthy' : 'backup-unconfirmed',
+      backupConfirmed: Boolean(backupConfirmed),
+      warning: backupConfirmed ? '' : '本地密钥尚未确认备份',
+      masterKey,
+      managedSmtpPassword: {
+        present: true,
+        healthy: true,
+        updatedAt: stored.updatedAt || ''
+      }
+    }
+  } catch {
+    return {
+      status: 'unhealthy',
+      backupConfirmed: Boolean(backupConfirmed),
+      warning: '已保存的 SMTP 密码无法解密',
+      masterKey,
+      managedSmtpPassword: {
+        present: true,
+        healthy: false,
+        updatedAt: secretRecord.updatedAt || ''
+      }
+    }
+  }
+}
+
 module.exports = {
   clearStoredSmtpPassword,
   hasStoredSmtpPassword,
+  inspectSecretHealth,
   loadStoredSmtpPassword,
   saveStoredSmtpPassword,
   secretKeyPath,
