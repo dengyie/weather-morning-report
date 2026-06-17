@@ -1832,6 +1832,29 @@ Validation coverage:
 - service route tests cover configuration rendering, successful rotation, undecryptable-secret failure, and configuration-persistence rollback;
 - focused Phase 18 verification passed with `node --test --test-concurrency=1 tests/email-send-now.test.js tests/service-app.test.js`.
 
+Production review summary:
+
+- review skill: `production-code-quality-review`
+- review scope: whole-repo context collection plus Phase 18 diff verification
+- blocking issue found and fixed: rotation originally allowed the local key/secrets write to succeed before configuration backup-confirmation persistence, which could leave `secretKeyBackupConfirmed` stale after a configuration write failure; the implementation now rolls back the secret rotation when the post-rotation configuration callback fails and recovers pending writes from a local rotation-state file;
+- optimization items reviewed:
+  - keep operator-facing rotation failures secret-free and bounded to the configuration workflow;
+  - keep interrupted-rotation recovery local to `OPENPET_DATA_DIR` without adding export/import scope;
+  - defer raw key portability and external KMS/keychain work because they exceed the approved Phase 18 boundary;
+- quality score: `9/10` (assumption recorded here because the review skill defines pass/fail guidance but does not define a built-in numeric rubric);
+- release recommendation: `通过`
+
+Todo status:
+
+- Phase 18 tasks from the migration document and implementation plan are complete;
+- no separate repo-level `todo` artifact was found beyond the migration-phase checklist, so this record treats the documented phase list as the active todo source;
+- no new in-scope follow-up items were introduced by the Phase 18 review.
+
+Next-stage dependency and risk:
+
+- the migration document currently defines phases through Phase 18 only;
+- if work continues beyond this point, the next stage needs a new approved spec before implementation so scope does not drift beyond the documented first-pass project goal.
+
 Remaining SMTP work:
 
 - external KMS or OS keychain integration remains out of scope;
