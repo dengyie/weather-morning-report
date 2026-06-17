@@ -35,7 +35,9 @@ const buildSmtpOptions = ({ message, env }) => {
   const configuredSenderEmail = String(smtp.senderEmail || smtp.username || '').trim()
   const senderEmail = String(smtp.senderEmail || message.envelope?.from || '').trim()
   const username = String(smtp.username || '').trim()
-  const password = String(env.SMTP_PASSWORD || '')
+  const password = smtp.resolvedPassword !== undefined
+    ? String(smtp.resolvedPassword)
+    : String(env.SMTP_PASSWORD || '')
 
   if (!host) throw new Error('SMTP host is required')
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('SMTP port is invalid')

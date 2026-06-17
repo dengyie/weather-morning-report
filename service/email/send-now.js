@@ -87,6 +87,7 @@ const sendEmailNow = async ({
   paths,
   recipientId,
   reportType = 'morning',
+  smtp,
   transport,
   now = () => new Date(),
   fetchReport = defaultFetchReport,
@@ -99,7 +100,8 @@ const sendEmailNow = async ({
   }
   const createdAt = now()
   const id = createDeliveryId(createdAt)
-  const senderEmail = configuration.smtp.senderEmail || configuration.smtp.username || 'weather-morning-report@localhost'
+  const smtpConfiguration = smtp || configuration.smtp
+  const senderEmail = smtpConfiguration.senderEmail || smtpConfiguration.username || 'weather-morning-report@localhost'
   let rendered = fallbackRenderedMetadata(recipient)
 
   try {
@@ -117,7 +119,7 @@ const sendEmailNow = async ({
         from: senderEmail,
         to: recipient.email
       },
-      smtp: configuration.smtp,
+      smtp: smtpConfiguration,
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html

@@ -7,6 +7,7 @@ const assert = require('node:assert/strict')
 const { createServiceApp } = require('../service/app')
 const { loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 const { loadSmtpOperationHistory } = require('../service/storage/smtp-operation-history-store')
+const { loadStoredSmtpPassword, saveStoredSmtpPassword, secretsPath } = require('../service/storage/secret-store')
 const { loadSchedulerState } = require('../service/scheduler/state-store')
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -368,6 +369,119 @@ test('smtp form never echoes submitted password', async () => {
     assert.doesNotMatch(JSON.stringify(configuration), /super-secret/)
     assert.doesNotMatch(page.body, /super-secret/)
     assert.match(page.body, /已保存，留空保持不变/)
+  })
+})
+
+test('smtp form stores passwords in managed secret storage instead of configuration json', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    const stored = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(configuration.smtp.passwordSaved, true)
+    assert.doesNotMatch(JSON.stringify(configuration), /super-secret/)
+    assert.equal(stored.password, 'super-secret')
+  })
+})
+
+test('smtp transport prefers managed smtp password over runtime env fallback', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const sentMessages = []
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'env-secret'
+      },
+      createEmailTransport: ({ env }) => {
+        assert.equal(env.SMTP_PASSWORD, 'env-secret')
+        return {
+          async send (message) {
+            sentMessages.push(message)
+            return { messageId: 'smtp-route-message-1' }
+          }
+        }
+      },
+      fetchEmailReport: async () => ({
+        snapshot: createEmailSnapshot(),
+        advice: createEmailAdvice(),
+        cached: false
+      })
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=managed-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/send-now',
+      payload: 'recipient_id=recipient-1&report_type=morning',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().messageId, 'smtp-route-message-1')
+    assert.equal(sentMessages.length, 1)
+    assert.equal(sentMessages[0].smtp.resolvedPassword, 'managed-secret')
+  })
+})
+
+test('smtp clear-password route removes managed secret and resets password saved state', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/clear-password',
+      payload: 'page_mode=configuration',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    const stored = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(configuration.smtp.passwordSaved, false)
+    assert.equal(stored, null)
   })
 })
 
@@ -847,6 +961,51 @@ test('smtp test connection route redacts transport failures', async () => {
     assert.equal(response.json().ok, false)
     assert.match(response.json().error, /\[redacted\]/)
     assert.doesNotMatch(response.body, new RegExp(secret))
+  })
+})
+
+test('smtp test connection route fails safely when managed secret storage is corrupted', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: 'env-secret'
+      },
+      emailTransport: {
+        async verify () {
+          throw new Error('verify should not run with corrupted managed secret')
+        }
+      }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=managed-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const secrets = JSON.parse(readFileSync(secretsPath({ dataDir, cacheDir, logDir }), 'utf8'))
+    secrets.smtpPassword.ciphertext = 'not-valid-base64'
+    require('node:fs').writeFileSync(secretsPath({ dataDir, cacheDir, logDir }), `${JSON.stringify(secrets, null, 2)}\n`)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const history = loadSmtpOperationHistory({ dataDir, cacheDir, logDir })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.equal(response.json().ok, false)
+    assert.match(response.json().error, /stored SMTP password could not be decrypted/)
+    assert.equal(history.at(-1)?.status, 'failed')
+    assert.match(history.at(-1)?.error || '', /stored SMTP password could not be decrypted/)
+    assert.doesNotMatch(response.body, /managed-secret|env-secret/)
   })
 })
 
