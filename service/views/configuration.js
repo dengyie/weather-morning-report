@@ -43,6 +43,10 @@ const renderRecipients = (recipients) => `<section class="card workbench-card">
     </article>`).join('')}
 </section>`
 
+const renderNotices = (notices = [], type) => notices.length === 0
+  ? ''
+  : `<div class="notice notice-${escapeHtml(type)}">${notices.map((notice) => `<p>${escapeHtml(notice)}</p>`).join('')}</div>`
+
 const renderErrors = (errors = []) => errors.length === 0
   ? ''
   : `<div class="notice notice-warning">${errors.map((error) => `<p>${escapeHtml(error)}</p>`).join('')}</div>`
@@ -99,9 +103,11 @@ const renderSmtpForm = (values, recipients = []) => renderSection('邮件服务'
 </form>
 <div class="quick-actions">
   <form method="post" action="/configuration/smtp/test-connection">
+    <input type="hidden" name="page_mode" value="configuration">
     <button type="submit">测试 SMTP 连接</button>
   </form>
   <form method="post" action="/email/test">
+    <input type="hidden" name="page_mode" value="configuration">
     <label>测试收件人<select name="recipient_id"${recipients.length === 0 ? ' disabled' : ''}>${recipients.map((recipient) => `<option value="${escapeHtml(recipient.id)}">${escapeHtml(recipient.name)} · ${escapeHtml(recipient.email)}</option>`).join('')}</select></label>
     <button type="submit"${recipients.length === 0 ? ' disabled' : ''}>发送测试邮件</button>
   </form>
@@ -135,7 +141,7 @@ const renderNotificationsForm = (values) => renderSection('通知与数据保留
   <button type="submit">保存通知设置</button>
 </form>`)
 
-const renderConfigurationPage = ({ configuration, errors = [], values = {} }) => renderPage({
+const renderConfigurationPage = ({ configuration, errors = [], notices = [], values = {} }) => renderPage({
   title: '天气早报配置中心',
   activePath: '/configuration',
   body: `<section class="hero config-hero">
@@ -143,6 +149,7 @@ const renderConfigurationPage = ({ configuration, errors = [], values = {} }) =>
     <h1>配置中心</h1>
     <p>把天气早报配置成一张清晰工作台。当前有 ${configuration.recipients.length} 位收件人与 ${configuration.schedules.length} 条计划。</p>
   </section>
+  ${renderNotices(notices, 'success')}
   ${renderErrors(errors)}
   ${renderDefaultsForm(values.defaults || configuration.newUserDefaults)}
   ${renderRecipientForm(values.recipient)}

@@ -25,6 +25,10 @@ const configuredSmtpSender = (smtp = {}) => {
   return senderEmail
 }
 
+const isConfigurationPageMode = (body = {}) => body?.page_mode === 'configuration'
+
+const configurationNoticeLocation = (message) => `/configuration?smtp_notice=${encodeURIComponent(message)}`
+
 const createServiceApp = ({
   env = process.env,
   emailTransport,
@@ -61,7 +65,8 @@ const createServiceApp = ({
   app.get('/configuration', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
     reply.type('text/html; charset=utf-8')
-    return renderConfigurationPage({ configuration })
+    const notice = String(_request.query?.smtp_notice || '').trim()
+    return renderConfigurationPage({ configuration, notices: notice ? [notice] : [] })
   })
 
   app.get('/logs', async (_request, reply) => {
@@ -145,8 +150,9 @@ const createServiceApp = ({
     return reply.code(303).header('location', '/configuration').send()
   })
 
-  app.post('/configuration/smtp/test-connection', async (_request, reply) => {
+  app.post('/configuration/smtp/test-connection', async (request, reply) => {
     const configuration = loadConfiguration(paths)
+    const pageMode = isConfigurationPageMode(request.body)
     try {
       if (typeof resolvedEmailTransport.verify !== 'function') {
         throw new Error('SMTP transport does not support connection verification')
@@ -158,8 +164,18 @@ const createServiceApp = ({
         },
         smtp: configuration.smtp
       })
+      if (pageMode) {
+        return reply.code(303).header('location', configurationNoticeLocation('SMTP connection verified.')).send()
+      }
       return reply.code(200).send({ ok: true, status: 'connected' })
     } catch (error) {
+      if (pageMode) {
+        reply.code(502).type('text/html; charset=utf-8')
+        return renderConfigurationPage({
+          configuration,
+          errors: [`测试 SMTP 连接失败：${redactError(error, [env.SMTP_PASSWORD])}`]
+        })
+      }
       return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
     }
   })
@@ -249,7 +265,12 @@ const createServiceApp = ({
   app.post('/email/test', async (request, reply) => {
     const configuration = loadConfiguration(paths)
     const recipient = findRecipient(configuration, request.body?.recipient_id)
+    const pageMode = isConfigurationPageMode(request.body)
     if (!recipient) {
+      if (pageMode) {
+        reply.code(400).type('text/html; charset=utf-8')
+        return renderConfigurationPage({ configuration, errors: ['收件人不存在'] })
+      }
       return reply.code(400).send({ ok: false, error: '收件人不存在' })
     }
     try {
@@ -264,8 +285,18 @@ const createServiceApp = ({
         text: 'Weather Morning Report SMTP test message. If you received this, Email delivery is configured.',
         html: '<p>Weather Morning Report SMTP test message.</p><p>If you received this, Email delivery is configured.</p>'
       })
+      if (pageMode) {
+        return reply.code(303).header('location', configurationNoticeLocation(`Test Email sent to ${recipient.name}.`)).send()
+      }
       return reply.code(200).send({ ok: true, status: 'sent', messageId: delivery?.messageId || 'smtp-test' })
     } catch (error) {
+      if (pageMode) {
+        reply.code(502).type('text/html; charset=utf-8')
+        return renderConfigurationPage({
+          configuration,
+          errors: [`发送测试邮件失败：${redactError(error, [env.SMTP_PASSWORD])}`]
+        })
+      }
       return reply.code(502).send({ ok: false, error: redactError(error, [env.SMTP_PASSWORD]) })
     }
   })

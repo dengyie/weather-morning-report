@@ -396,6 +396,32 @@ test('configuration page renders SMTP operational controls', async () => {
   })
 })
 
+test('configuration page can render SMTP operation success notices', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration?smtp_notice=SMTP%20connection%20verified' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /SMTP connection verified/)
+    assert.match(page.body, /notice-success/)
+    assert.match(page.body, /action="\/configuration\/smtp\/test-connection"/)
+  })
+})
+
 test('smtp test connection route verifies current configuration without sending email', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const calls = []
@@ -441,6 +467,40 @@ test('smtp test connection route verifies current configuration without sending 
   })
 })
 
+test('page-mode smtp test connection redirects to configuration with success notice', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async verify () {
+          return { ok: true }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: 'page_mode=configuration',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
+  })
+})
+
 test('smtp test connection route redacts transport failures', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const secret = 'runtime-secret'
@@ -476,6 +536,45 @@ test('smtp test connection route redacts transport failures', async () => {
     assert.equal(response.json().ok, false)
     assert.match(response.json().error, /\[redacted\]/)
     assert.doesNotMatch(response.body, new RegExp(secret))
+  })
+})
+
+test('page-mode smtp test connection failure re-renders configuration with redacted warning', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'runtime-secret'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      emailTransport: {
+        async verify () {
+          throw new Error(`SMTP auth failed for ${secret}`)
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp/test-connection',
+      payload: 'page_mode=configuration',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.match(response.headers['content-type'], /text\/html/)
+    assert.match(response.body, /\[redacted\]/)
+    assert.doesNotMatch(response.body, new RegExp(secret))
+    assert.match(response.body, /测试 SMTP 连接/)
   })
 })
 
@@ -802,6 +901,92 @@ test('email test route sends operational test message without delivery history',
     assert.match(sentMessages[0].text, /Weather Morning Report SMTP test/)
     assert.deepEqual(history, [])
     assert.doesNotMatch(JSON.stringify(sentMessages), /runtime-secret/)
+  })
+})
+
+test('page-mode email test redirects to configuration with recipient success notice', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      },
+      emailTransport: {
+        async send () {
+          return { messageId: 'smtp-test-message-1' }
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1&page_mode=configuration',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
+    assert.match(decodeURIComponent(response.headers.location || ''), /Mango/)
+  })
+})
+
+test('page-mode email test failure re-renders configuration with redacted warning', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const secret = 'runtime-secret'
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        SMTP_PASSWORD: secret
+      },
+      emailTransport: {
+        async send () {
+          throw new Error(`SMTP send failed with ${secret}`)
+        }
+      }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: 'name=Mango&email=mango%40example.com&location_name=Shanghai&location_query=Shanghai&timezone=Asia%2FShanghai&language=zh-CN&email_template=5&enabled=on',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=runtime-secret&security=starttls&sender_email=sender%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/email/test',
+      payload: 'recipient_id=recipient-1&page_mode=configuration',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.match(response.headers['content-type'], /text\/html/)
+    assert.match(response.body, /\[redacted\]/)
+    assert.doesNotMatch(response.body, new RegExp(secret))
+    assert.match(response.body, /发送测试邮件/)
   })
 })
 
