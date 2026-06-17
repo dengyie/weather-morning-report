@@ -1797,6 +1797,47 @@ Remaining SMTP work:
 - external KMS or OS keychain integration remains separate from local key backup UX;
 - scheduler worker daemonization remains separate from secret health UX.
 
+## 13.25 Phase 18 Development Record
+
+Phase 18 adds safe local secret-key rotation with managed SMTP password re-encryption and backup-confirmation reset.
+
+Implemented artifacts:
+
+- `docs/superpowers/specs/2026-06-17-phase-18-secret-key-rotation-and-recovery-design.md`
+- `docs/superpowers/plans/2026-06-17-phase-18-secret-key-rotation-and-recovery.md`
+- updated `service/storage/secret-store.js`
+- updated `service/app.js`
+- updated `service/views/configuration.js`
+- expanded `tests/email-send-now.test.js`
+- expanded `tests/service-app.test.js`
+
+Operational behavior:
+
+- `POST /configuration/secrets/rotate-key` rotates the local `.secret-key` only when the managed SMTP password is healthy and decryptable;
+- the managed SMTP password is re-encrypted under the new local key;
+- successful rotation resets `notifications.secretKeyBackupConfirmed = false`;
+- the configuration page renders a rotation action when a managed SMTP password exists;
+- failed rotation keeps the prior secret payload usable and shows operator-safe feedback without leaking secret material;
+- rotation recovery uses a local rotation-state file to restore pending writes if a previous attempt was interrupted.
+
+Security boundary:
+
+- Phase 18 does not add key export, download, import, or cross-machine recovery flows;
+- page HTML, notices, and tests keep raw keys, decrypted passwords, ciphertext, and invalid key contents hidden;
+- rollback artifacts stay in `OPENPET_DATA_DIR` and are cleaned up after recovery.
+
+Validation coverage:
+
+- secret-store tests cover successful rotation, missing secret rejection, invalid key rejection, rollback on write failure, rollback on post-rotation callback failure, and interrupted-rotation recovery;
+- service route tests cover configuration rendering, successful rotation, undecryptable-secret failure, and configuration-persistence rollback;
+- focused Phase 18 verification passed with `node --test --test-concurrency=1 tests/email-send-now.test.js tests/service-app.test.js`.
+
+Remaining SMTP work:
+
+- external KMS or OS keychain integration remains out of scope;
+- raw key export/import and downloadable backup recovery remain intentionally out of scope;
+- scheduler worker daemonization remains separate from secret lifecycle UX.
+
 ## 14. Deliberate Non-Goals
 
 First version should not:

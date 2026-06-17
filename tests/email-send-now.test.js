@@ -11,8 +11,10 @@ const {
   clearStoredSmtpPassword,
   inspectSecretHealth,
   loadStoredSmtpPassword,
+  rotateStoredSmtpPasswordKey,
   saveStoredSmtpPassword,
   secretKeyPath,
+  secretRotationStatePath,
   secretsPath
 } = require('../service/storage/secret-store')
 const {
@@ -278,6 +280,124 @@ test('secret health reports corrupt managed SMTP payload without throwing', asyn
     assert.equal(health.managedSmtpPassword.healthy, false)
     assert.match(health.warning, /已保存的 SMTP 密码无法解密/)
     assert.doesNotMatch(JSON.stringify(health), /super-secret-password|not-valid-base64/)
+  })
+})
+
+test('secret key rotation preserves the managed SMTP password and advances the key', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password', { now: new Date('2026-06-17T08:00:00.000Z') })
+    const beforeKey = readFileSync(secretKeyPath(paths), 'utf8')
+
+    const result = rotateStoredSmtpPasswordKey(paths, { now: new Date('2026-06-17T09:00:00.000Z') })
+    const afterKey = readFileSync(secretKeyPath(paths), 'utf8')
+    const stored = loadStoredSmtpPassword(paths)
+
+    assert.equal(result.ok, true)
+    assert.equal(beforeKey !== afterKey, true)
+    assert.equal(stored.password, 'super-secret-password')
+    assert.equal(stored.updatedAt, '2026-06-17T09:00:00.000Z')
+    assert.equal(result.backupConfirmed, false)
+    assert.doesNotMatch(JSON.stringify(result), /super-secret-password/)
+  })
+})
+
+test('secret key rotation rejects missing managed SMTP secrets', async () => {
+  await withTempServiceDirs(async (paths) => {
+    const result = rotateStoredSmtpPasswordKey(paths)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'managed SMTP password is not configured')
+    assert.equal(existsSync(secretKeyPath(paths)), false)
+  })
+})
+
+test('secret key rotation rejects invalid local keys without leaking secret material', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    require('node:fs').writeFileSync(secretKeyPath(paths), 'not-valid-base64')
+
+    const result = rotateStoredSmtpPasswordKey(paths)
+
+    assert.equal(result.ok, false)
+    assert.match(result.error, /current local secret key is invalid/)
+    assert.doesNotMatch(JSON.stringify(result), /super-secret-password|not-valid-base64/)
+  })
+})
+
+test('secret key rotation rolls back when replacing the key fails', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    const beforeKey = readFileSync(secretKeyPath(paths), 'utf8')
+    const beforeSecrets = readFileSync(secretsPath(paths), 'utf8')
+
+    const result = rotateStoredSmtpPasswordKey(paths, {
+      writeFile: (file, value, options, defaultWrite) => {
+        if (String(file).endsWith('.secret-key.next')) {
+          throw new Error('simulated write failure')
+        }
+        return defaultWrite(file, value, options)
+      }
+    })
+
+    assert.equal(result.ok, false)
+    assert.match(result.error, /rotation failed/)
+    assert.equal(readFileSync(secretKeyPath(paths), 'utf8'), beforeKey)
+    assert.equal(readFileSync(secretsPath(paths), 'utf8'), beforeSecrets)
+  })
+})
+
+test('secret key rotation rolls back when post-rotation callback fails', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    const beforeKey = readFileSync(secretKeyPath(paths), 'utf8')
+    const beforeSecrets = readFileSync(secretsPath(paths), 'utf8')
+
+    const result = rotateStoredSmtpPasswordKey(paths, {
+      onRotated: () => {
+        throw new Error('configuration save failed')
+      }
+    })
+
+    assert.equal(result.ok, false)
+    assert.match(result.error, /rotation failed: configuration save failed/)
+    assert.equal(readFileSync(secretKeyPath(paths), 'utf8'), beforeKey)
+    assert.equal(readFileSync(secretsPath(paths), 'utf8'), beforeSecrets)
+    assert.equal(existsSync(secretRotationStatePath(paths)), false)
+  })
+})
+
+test('secret key reads recover previous files when rotation state is left behind', async () => {
+  await withTempServiceDirs(async (paths) => {
+    saveStoredSmtpPassword(paths, 'super-secret-password')
+    const previousKey = readFileSync(secretKeyPath(paths), 'utf8')
+    const previousSecrets = readFileSync(secretsPath(paths), 'utf8')
+    const nextKey = Buffer.alloc(32, 7).toString('base64')
+    const nextSecrets = `${JSON.stringify({
+      smtpPassword: {
+        algorithm: 'aes-256-gcm',
+        keyId: 'local',
+        iv: Buffer.alloc(12, 8).toString('base64'),
+        tag: Buffer.alloc(16, 9).toString('base64'),
+        ciphertext: Buffer.alloc(24, 10).toString('base64'),
+        updatedAt: '2026-06-17T10:00:00.000Z'
+      }
+    }, null, 2)}\n`
+
+    require('node:fs').writeFileSync(secretKeyPath(paths), nextKey)
+    require('node:fs').writeFileSync(secretsPath(paths), nextSecrets)
+    require('node:fs').writeFileSync(secretRotationStatePath(paths), `${JSON.stringify({
+      previousKey,
+      previousSecrets,
+      nextKey,
+      nextSecrets
+    }, null, 2)}\n`)
+
+    const stored = loadStoredSmtpPassword(paths)
+
+    assert.equal(stored.password, 'super-secret-password')
+    assert.equal(readFileSync(secretKeyPath(paths), 'utf8'), previousKey)
+    assert.equal(readFileSync(secretsPath(paths), 'utf8'), previousSecrets)
+    assert.equal(existsSync(secretRotationStatePath(paths)), false)
   })
 })
 

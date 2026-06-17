@@ -616,6 +616,162 @@ test('smtp form can replace corrupt managed secret storage after health warning'
   })
 })
 
+test('configuration page renders a key rotation action for healthy managed secret state', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /密钥与备份状态/)
+    assert.match(page.body, /action="\/configuration\/secrets\/rotate-key"/)
+    assert.doesNotMatch(page.body, /super-secret/)
+  })
+})
+
+test('secret key rotation route rotates the key and resets backup confirmation', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/rotate-key',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(configuration.notifications.secretKeyBackupConfirmed, false)
+    assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
+  })
+})
+
+test('secret key rotation route fails safely when managed secret is not decryptable', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    require('node:fs').writeFileSync(secretsPath({ dataDir, cacheDir, logDir }), '{"smtpPassword":')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/rotate-key',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.match(response.body, /已保存的 SMTP 密码无法解密|stored SMTP password could not be decrypted/)
+    assert.doesNotMatch(response.body, /super-secret/)
+  })
+})
+
+test('secret key rotation route rolls back when configuration persistence fails', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const setupApp = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+    })
+
+    await setupApp.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await setupApp.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await setupApp.close()
+
+    const appModulePath = require.resolve('../service/app')
+    const configurationStoreModulePath = require.resolve('../service/storage/configuration-store')
+    delete require.cache[appModulePath]
+    delete require.cache[configurationStoreModulePath]
+
+    let saveCalls = 0
+    const configurationFile = path.join(dataDir, 'configuration.json')
+    const originalWriteFileSync = require('node:fs').writeFileSync
+    const beforeKey = readFileSync(secretKeyPath({ dataDir, cacheDir, logDir }), 'utf8')
+    const beforeSecret = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+    try {
+      require('node:fs').writeFileSync = (...args) => {
+        if (String(args[0]) === configurationFile) {
+          saveCalls += 1
+          if (saveCalls >= 2) {
+            throw new Error('simulated configuration persistence failure')
+          }
+        }
+        return originalWriteFileSync(...args)
+      }
+
+      const { createServiceApp: createFreshServiceApp } = require('../service/app')
+      const app = createFreshServiceApp({
+        env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      })
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/configuration/secrets/rotate-key',
+        payload: '',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' }
+      })
+
+      const afterKey = readFileSync(secretKeyPath({ dataDir, cacheDir, logDir }), 'utf8')
+      const afterSecret = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+      const configuration = JSON.parse(readFileSync(configurationFile, 'utf8'))
+      await app.close()
+
+      assert.equal(response.statusCode, 502)
+      assert.match(response.body, /rotation failed/)
+      assert.equal(afterKey, beforeKey)
+      assert.equal(afterSecret.password, beforeSecret.password)
+      assert.equal(configuration.notifications.secretKeyBackupConfirmed, true)
+    } finally {
+      require('node:fs').writeFileSync = originalWriteFileSync
+      delete require.cache[appModulePath]
+      delete require.cache[configurationStoreModulePath]
+    }
+  })
+})
+
 test('configuration page renders SMTP operational controls', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({

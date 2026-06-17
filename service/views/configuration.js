@@ -215,6 +215,11 @@ const renderSecretHealth = (secretHealth = {}) => {
         : `<form method="post" action="/configuration/secrets/confirm-backup">
           <button type="submit"${managedPassword.present ? '' : ' disabled'}>标记已备份密钥</button>
         </form>`}
+      ${managedPassword.present
+        ? `<form method="post" action="/configuration/secrets/rotate-key">
+          <button type="submit">轮换本地密钥</button>
+        </form>`
+        : ''}
     </div>
   </article>`)
 }

@@ -12,6 +12,7 @@ const {
   hasStoredSmtpPassword,
   inspectSecretHealth,
   loadStoredSmtpPassword,
+  rotateStoredSmtpPasswordKey,
   saveStoredSmtpPassword
 } = require('./storage/secret-store')
 const {
@@ -340,6 +341,27 @@ const createServiceApp = ({
     }
     saveConfiguration(paths, configuration)
     return reply.code(303).header('location', '/configuration').send()
+  })
+
+  app.post('/configuration/secrets/rotate-key', async (_request, reply) => {
+    const configuration = loadConfiguration(paths)
+    const result = rotateStoredSmtpPasswordKey(paths, {
+      onRotated: () => {
+        configuration.notifications = {
+          ...configuration.notifications,
+          secretKeyBackupConfirmed: false
+        }
+        saveConfiguration(paths, configuration)
+      }
+    })
+    if (!result.ok) {
+      reply.code(502).type('text/html; charset=utf-8')
+      return renderConfigurationPage({
+        configuration: configurationModelForView(configuration),
+        errors: [result.error]
+      })
+    }
+    return reply.code(303).header('location', '/configuration?smtp_notice=' + encodeURIComponent('本地密钥已轮换，请重新确认新密钥的备份状态')).send()
   })
 
   app.post('/configuration/smtp/test-connection', async (request, reply) => {
