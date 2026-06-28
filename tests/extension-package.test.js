@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, '..')
 const manifestPath = path.join(repoRoot, 'extension/plugin.json')
 const releaseDir = path.join(repoRoot, 'release')
 const extensionArchivePath = path.join(releaseDir, 'weather-morning-report.openpet-extension.zip')
+const extensionStagePath = path.join(releaseDir, 'weather-morning-report-extension')
 
 const loadManifest = () => JSON.parse(readFileSync(manifestPath, 'utf8'))
 
@@ -42,8 +43,9 @@ test('unified extension manifest declares commands service dashboard and data bo
 })
 
 test('package:extension creates a unified extension zip with active runtime files', async () => {
-  await rm(releaseDir, { recursive: true, force: true })
   await mkdir(releaseDir, { recursive: true })
+  await rm(extensionArchivePath, { force: true })
+  await rm(extensionStagePath, { recursive: true, force: true })
 
   execFileSync('npm', ['run', 'package:extension'], { cwd: repoRoot, stdio: 'pipe' })
 
