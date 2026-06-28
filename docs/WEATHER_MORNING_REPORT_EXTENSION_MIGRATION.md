@@ -127,7 +127,7 @@ Confirmed strengths to preserve:
 
 - current JS core already covers weather fetch, wttr fallback, defensive parsing, period selection, recommendation thresholds, bilingual rendering, command caching, and OpenPet package validation;
 - tests already cover parser edge cases, provider fallback, command behavior, bundle safety, packaging, and OpenPet validator acceptance;
-- the current OpenPet package remains a useful compatibility baseline until the new unified extension model lands.
+- the current OpenPet compatibility package remains useful while the unified extension package is the service/dashboard path for OpenPet main.
 
 Confirmed gaps to fix:
 
@@ -243,7 +243,7 @@ Current transitional runtime:
 - `src/`
 - `openpet-plugin/`
 
-The transitional runtime should remain valid until OpenPet supports the new shell-entry extension model. Once the new model is available, implementation should migrate from `src/` and `openpet-plugin/` into the active unified extension layout.
+The transitional runtime remains valid for compatibility. OpenPet main now supports shell-entry extension declarations, so service/dashboard work should target the active unified extension layout while keeping `src/` and `openpet-plugin/` as the legacy command adapter.
 
 ### 5.2 Core Layer
 
@@ -520,7 +520,7 @@ Example first-version `plugin.json`:
 }
 ```
 
-This is a target shape for the new OpenPet extension model, not the current old command-plugin package contract.
+This is the unified extension package shape. `openpet-plugin/` remains the legacy compatibility package contract for the command-only artifact.
 
 ## 7. Web Service Design
 
@@ -782,7 +782,7 @@ Validation should cover three layers.
 - package includes active templates and static CSS;
 - service health URL matches manifest dashboard/service defaults.
 
-When OpenPet implements the new extension validator, this repository should validate against it.
+This repository now validates the unified extension zip against the current OpenPet main `validate:plugin` command, while keeping local artifact checks as stricter package-specific guards.
 
 ## 13. Migration Phases
 
@@ -865,7 +865,7 @@ Done when:
 
 ### Phase 7: Unified Extension Package
 
-- Replace command-only package with unified `plugin.json`.
+- Add unified `plugin.json` while keeping the command-only compatibility package.
 - Add shell command entries.
 - Add service and dashboard entries.
 - Update packaging scripts.
@@ -876,16 +876,16 @@ Done when:
 - package includes active commands/service/dashboard/templates/static assets;
 - package excludes local secrets and default legacy archive;
 - commands consume stdin/env and return JSON;
-- service can be started/stopped by OpenPet's new extension lifecycle.
+- service entry is declared for OpenPet's extension lifecycle.
 
 ### Phase 8: OpenPet Alignment
 
-- Validate against the new OpenPet extension model when available.
-- Update docs for actual OpenPet implementation details.
+- Validate against the current OpenPet main extension-entry model.
+- Update docs for current OpenPet implementation details.
 
 Done when:
 
-- package passes the new OpenPet structural validator;
+- package passes the current OpenPet structural validator;
 - dashboard opens from OpenPet;
 - service health appears in OpenPet;
 - command logs and result JSON appear in OpenPet.
@@ -1000,7 +1000,7 @@ Implemented artifacts:
 
 Packaging status:
 
-- Current command-plugin packaging still includes only `openpet-plugin/plugin.json`, `openpet-plugin/config.schema.json`, `openpet-plugin/index.js`, and `openpet-plugin/README.md`.
+- Compatibility command-plugin packaging still includes only `openpet-plugin/plugin.json`, `openpet-plugin/config.schema.json`, `openpet-plugin/index.js`, and `openpet-plugin/README.md`.
 - `legacy-assets/recovered/` is intentionally excluded from the current `.openpet-plugin.zip` artifact.
 - Active runtime code must not import from `legacy-assets/recovered/`.
 
@@ -1046,7 +1046,7 @@ Remaining Phase 2 work before Web/Email service implementation:
 
 ## 13.4 Phase 3 Development Record
 
-Phase 3 is complete with a Fastify companion service skeleton. This service is active repository code but is not included in the current command-only `.openpet-plugin.zip` package until OpenPet's unified extension lifecycle is ready.
+Phase 3 is complete with a Fastify companion service skeleton. This service is active repository code and is packaged in the unified `.openpet-extension.zip`; it remains excluded from the command-only `.openpet-plugin.zip` compatibility artifact.
 
 Implemented artifacts:
 
@@ -1071,7 +1071,7 @@ Current packaging boundary:
 
 - current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
 - Fastify service files are intentionally excluded from the current OpenPet command-plugin zip;
-- unified service/dashboard packaging should wait for the new OpenPet extension manifest and validator.
+- `npm run package:extension` includes the service files through the unified extension manifest and is validated against OpenPet main.
 
 Validation record:
 
@@ -1136,7 +1136,7 @@ Current packaging boundary:
 
 - current `npm run package:plugin` still builds only the command-plugin package under `openpet-plugin/`;
 - Web dashboard service files are intentionally excluded from the current OpenPet command-plugin zip;
-- unified service/dashboard packaging remains deferred to the unified extension package phase.
+- `npm run package:extension` includes Web dashboard service files in the unified extension zip.
 
 ## 13.6 Phase 5 Development Record
 
@@ -1242,7 +1242,7 @@ Current packaging boundary:
 
 ## 13.8 Phase 7 Development Record
 
-Phase 7 is complete with a dual-package transition toward the unified OpenPet extension model. The repository still produces the current command-plugin artifact for today's OpenPet validator, and now also produces a repository-validated unified extension artifact that includes active commands, service, dashboard assets, and package metadata.
+Phase 7 is complete with a dual-package transition toward the unified OpenPet extension model. The repository still produces the command-plugin compatibility artifact for command-only installations, and also produces an OpenPet-main-validated unified extension artifact that includes active commands, service, dashboard assets, and package metadata.
 
 Implemented artifacts:
 
@@ -1267,7 +1267,7 @@ Current packaging behavior:
 - `npm run package:extension` creates `release/weather-morning-report.openpet-extension.zip` from a staged package root;
 - the unified package root contains `plugin.json`, `config.schema.json`, `package.json`, `README.md`, `commands/`, `core/`, `rendering/`, `service/`, and `static/`;
 - the unified package excludes `legacy-assets/`, `docs/`, `tests/`, `release/`, `node_modules/`, `.git/`, local data directories, and `.env` files;
-- `npm run lint:extension` validates the unified zip locally until the official OpenPet unified validator exists.
+- `npm run lint:extension` validates package-specific rules locally, and OpenPet main `validate:plugin` validates the unified zip against the host package rules.
 
 Current unified manifest entries:
 
@@ -1304,10 +1304,10 @@ Production review fixes:
 
 Remaining Phase 8 alignment:
 
-- validate the unified package against the actual OpenPet extension model when available;
+- keep the unified package passing the current OpenPet main extension-entry validator;
 - wire real OpenPet service lifecycle start/stop semantics;
 - expose dashboard/service health through OpenPet surfaces;
-- replace repository-local unified validation with the official validator once it exists.
+- keep repository-local artifact validation as an additional package-specific guard.
 
 ## 13.9 Phase 8 Development Record
 
@@ -1332,7 +1332,7 @@ Validation coverage:
 - the unified extension zip passes the current OpenPet package validator;
 - current command-plugin `.openpet-plugin.zip` validator coverage remains unchanged;
 - local unified artifact validation still checks package-specific exclusions and entry path consistency.
-- CI keeps this integration tolerant of OpenPet `main` until unified extension schema support lands there; old `main` validators that only accept command-plugin manifests are reported as an explicit skip, while real extension validation failures still fail the test.
+- CI treats OpenPet `main` extension-entry support as required; the unified extension zip must pass the sibling OpenPet `validate:plugin` command, and real validation failures fail the test.
 
 Runtime evidence still required after repository alignment:
 
@@ -1879,5 +1879,5 @@ First version should not:
 - Exact template mechanism can be finalized during implementation; default recommendation is JS renderer functions with explicit escaping.
 - SMTP settings should live in service-managed storage under `OPENPET_DATA_DIR`; `.env` may be supported for developer overrides.
 - Production packages should aim to be self-contained, but `setup` remains supported.
-- Current `openpet-plugin/` should remain valid until the new OpenPet extension lifecycle is available.
+- Current `openpet-plugin/` should remain valid as the legacy compatibility path while `.openpet-extension.zip` is the preferred service/dashboard-capable artifact.
 - Login/forgot-password pages are optional until dashboard auth mode is chosen.
