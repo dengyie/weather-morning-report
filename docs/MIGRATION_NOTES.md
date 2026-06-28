@@ -4,7 +4,7 @@
 
 ## 1. 迁移原则
 
-本仓库已经从 Python 自托管天气早报服务切换为 OpenPet 原生 JS 插件工程。后续维护遵循：
+本仓库已经从 Python 自托管天气早报服务切换为 OpenPet 原生 JS 插件 / 扩展工程。后续维护遵循：
 
 - 保留天气早报的核心业务价值。
 - 不把服务端能力伪装成 OpenPet 插件能力。
@@ -31,14 +31,22 @@
 
 | 删除范围 | 删除原因 | 后续替代 |
 | --- | --- | --- |
-| SMTP / 邮件投递 | 当前 OpenPet command-plugin 不是邮件投递服务 | Fastify companion service 后续承载 |
-| FastAPI / 旧 Web UI / HTML templates / static assets | 旧 Python Web 栈不再作为当前插件包运行 | Fastify companion service + 迁移后的 active templates/static |
-| SQLite / SQLAlchemy / Alembic | 插件没有数据库迁移生命周期 | `ctx.storage` 小对象 |
-| jobs / worker / 后台调度 | OpenPet 当前是 command-style 短生命周期插件 | 用户或宿主触发命令 |
-| Docker / compose / systemd | 插件通过 Control Center 安装 | `.openpet-plugin.zip` |
+| SMTP / 邮件投递 | 不再由 Python 服务承载 | JS Fastify extension service 已承载 |
+| FastAPI / 旧 Web UI / HTML templates / static assets | 旧 Python Web 栈不再运行 | JS Fastify dashboard + active static/rendering |
+| SQLite / SQLAlchemy / Alembic | 不再使用 Python ORM/migrations | JS service-owned JSON storage and queue state |
+| jobs / worker / 后台调度 | 不再使用旧 Python worker | JS scheduler queue in extension service |
+| Docker / compose / systemd | 插件通过 Control Center 安装 | `.openpet-plugin.zip` 兼容包和 `.openpet-extension.zip` 统一扩展包 |
 | Python package / CLI 发布链路 | 目标产物不再是 Python 包 | npm scripts + OpenPet validation |
 
 这些删除是产品形态切换，不是暂时隐藏。后续不应恢复 Python 双栈维护；Web/Email/调度能力应在 JS companion service 和统一 extension package 中继续生长。
+
+### 2.3 当前活跃 TODO
+
+1. 真实 Control Center 视觉冒烟：在 Electron UI 中安装 unified extension，确认 dashboard 打开、service start/stop、health/log、command result 呈现正常。
+2. 发布签名/审查材料：当前 OpenPet validator 通过但包是 unsigned，release 前需要决定是否生成 `signature.json` hash metadata，并生成 submission bundle / maintainer approval record。
+3. Legacy 包去留决策：`.openpet-plugin.zip` 目前仍是兼容路径；当 OpenPet main 的 extension entry 流程稳定后，决定是否把 `.openpet-extension.zip` 作为唯一推荐发布物。
+4. OpenPet main 变更跟踪：`tests/openpet-extension-validate.test.js` 现在要求 main 支持 extension entries；如果 OpenPet main manifest schema 变化，先更新 `extension/plugin.json` 和本测试。
+5. 服务运维 polish：继续完善 dashboard 文案、history/export、scheduler 可观测性、secret backup 操作指引；不要回退到 Python/Docker/systemd 主路径。
 
 ## 3. 当前仓库结构
 
@@ -54,11 +62,20 @@ weather-morning-report/
 │   ├── MIGRATION_NOTES.md
 │   ├── RELEASE.md
 │   └── README.md
+├── extension/
+│   └── plugin.json
 ├── openpet-plugin/
 │   ├── plugin.json
 │   ├── config.schema.json
 │   ├── index.js
 │   └── README.md
+├── commands/
+│   ├── announce.js
+│   ├── cleanup.js
+│   ├── refresh.js
+│   ├── send-email-now.js
+│   ├── setup.js
+│   └── status.js
 ├── core/
 │   ├── config.js
 │   ├── weather-provider.js
@@ -79,6 +96,9 @@ weather-morning-report/
 ├── scripts/
 │   ├── build-plugin.js
 │   ├── check-plugin-artifact.js
+│   ├── check-extension-artifact.js
+│   ├── openpet-runtime-smoke.js
+│   ├── package-extension.js
 │   └── package-plugin.js
 └── tests/
     ├── commands-integration.test.js
@@ -99,9 +119,11 @@ weather-morning-report/
 
 - `core/`：framework-neutral 天气、配置、provider、parser、推荐与时段逻辑。
 - `rendering/`：framework-neutral 文案/视图模型渲染逻辑。
-- `service/`：Fastify companion service skeleton，当前不进入 command-plugin zip。
+- `commands/`：unified extension 的声明式 command entry。
+- `service/`：Fastify companion service，提供 dashboard、Email、scheduler、secret 管理和 health。
 - `src/`：OpenPet command adapter，只保留宿主 `ctx`、storage、pet say、命令编排。
-- `static/`：companion dashboard 静态资源，当前不进入 command-plugin zip。
+- `static/`：companion dashboard 静态资源，进入 unified extension 包。
+- `extension/plugin.json`：unified extension manifest source。
 - `openpet-plugin/`：OpenPet 可安装包根目录，必须始终能被 OpenPet `validate:plugin` 检查。
 - `openpet-plugin/index.js`：构建产物，必须为单文件，不依赖 runtime `require`。
 - `scripts/`：构建、打包、产物检查。
@@ -155,21 +177,39 @@ npm run build
 
 ```bash
 npm run package:plugin
+npm run package:extension
 ```
 
 输出：
 
 ```text
 release/weather-morning-report.openpet-plugin.zip
+release/weather-morning-report.openpet-extension.zip
 ```
 
-zip 根目录必须是：
+compatibility zip 根目录必须是：
 
 ```text
 plugin.json
 config.schema.json
 index.js
 README.md
+signature.json        # optional
+```
+
+unified extension zip 根目录必须包含：
+
+```text
+plugin.json
+config.schema.json
+README.md
+package.json
+commands/
+core/
+rendering/
+service/
+static/
+compat/openpet-main.js
 signature.json        # optional
 ```
 
@@ -193,6 +233,8 @@ npm run build
 npm run lint
 npm run typecheck
 npm run package:plugin
+npm run package:extension
+npm run lint:extension
 git diff --check
 ```
 
@@ -220,18 +262,20 @@ git diff --check
 cd /Users/mango/project/codex/OpenPet
 npm run validate:plugin -- /Users/mango/project/codex/weather-morning-report/openpet-plugin
 npm run validate:plugin -- /Users/mango/project/codex/weather-morning-report/release/weather-morning-report.openpet-plugin.zip
+npm run validate:plugin -- /Users/mango/project/codex/weather-morning-report/release/weather-morning-report.openpet-extension.zip
 ```
 
 验证目标：
 
 - `PluginInstallService` 可 inspect 插件目录。
 - `PluginInstallService` 可 inspect `.openpet-plugin.zip`。
+- `PluginInstallService` 可 inspect `.openpet-extension.zip`，并读取 extension `entries`。
 - manifest、paths、permissions、network allowlist 符合 OpenPet 当前规则。
 - zip entry、symlink、path traversal 等安全规则由 OpenPet 官方逻辑兜底。
 
 ### 5.3 OpenPet 提交包 rehearsal
 
-准备 OpenPet 插件提交包：
+准备 OpenPet 兼容插件提交包：
 
 ```bash
 cd /Users/mango/project/codex/OpenPet
@@ -241,7 +285,17 @@ npm run create-plugin-submission-bundle -- /Users/mango/project/codex/weather-mo
 npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-morning-report/release/plugin-submission-bundle --require-ready
 ```
 
-如果 release 需要严格 hash metadata，再按 OpenPet 最新命令增加 `--require-signature`。当前 OpenPet 文档说明 `signature.json` 只证明 hash metadata 覆盖，不建立公钥信任链。
+准备 OpenPet 统一扩展提交包：
+
+```bash
+cd /Users/mango/project/codex/OpenPet
+npm run create-plugin-submission-report -- /Users/mango/project/codex/weather-morning-report/release/weather-morning-report.openpet-extension.zip --output /Users/mango/project/codex/weather-morning-report/release/extension-submission-report.md
+npm run create-plugin-submission-pr -- /Users/mango/project/codex/weather-morning-report/release/weather-morning-report.openpet-extension.zip --output /Users/mango/project/codex/weather-morning-report/release/extension-submission-pr.md
+npm run create-plugin-submission-bundle -- /Users/mango/project/codex/weather-morning-report/release/weather-morning-report.openpet-extension.zip --output-dir /Users/mango/project/codex/weather-morning-report/release/extension-submission-bundle
+npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-morning-report/release/extension-submission-bundle --require-ready
+```
+
+如果 release 需要严格 hash metadata，再按 OpenPet 最新命令增加 `--require-signature`。当前 OpenPet 文档说明 `signature.json` 只证明 hash metadata 覆盖，不建立公钥信任链。当前两个 release zip 均为 unsigned，OpenPet validator 会给出 review risk warning。
 
 ## 6. 分阶段实施记录
 
@@ -351,7 +405,7 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 - `rendering/text-renderer.js`
 - `tests/architecture-boundary.test.js`
 
-结果：已完成。天气、配置、provider、parser、推荐、时段和文本渲染已从 OpenPet adapter 中抽出；`src/commands.js` 只负责 OpenPet `ctx`、storage、pet say 和命令编排。当前 command-plugin bundle 仍由 `scripts/build-plugin.js` 生成，并继续通过 OpenPet validator。
+结果：已完成。天气、配置、provider、parser、推荐、时段和文本渲染已从 OpenPet adapter 中抽出；`src/commands.js` 只负责 OpenPet `ctx`、storage、pet say 和命令编排。当前 command-plugin bundle 仍由 `scripts/build-plugin.js` 生成，并继续通过 OpenPet validator；统一扩展包由 `extension/plugin.json`、`commands/`、`service/` 和 `scripts/package-extension.js` 生成，并通过 OpenPet main extension-entry validator。
 
 ## 7. 生产级风险清单
 
@@ -374,8 +428,10 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 - 仓库是 JS/OpenPet 插件工程，不再是 Python 服务工程。
 - `openpet-plugin/plugin.json`、`config.schema.json`、`index.js` 可被 OpenPet 安装服务检查。
-- `.openpet-plugin.zip` 可通过 OpenPet `validate:plugin`。
+- `extension/plugin.json` 可声明 commands/setup/services/dashboards entries。
+- `.openpet-plugin.zip` 和 `.openpet-extension.zip` 都可通过 OpenPet `validate:plugin`。
 - `refresh`、`announce`、`last`、`status`、`clear-cache` 全部可运行。
+- 统一扩展 command entries、service entry、dashboard entry 均有 artifact/runtime smoke 覆盖。
 - `wttr.in` 失败时 fallback `wttr.is`。
 - 两个 provider 都失败时优先使用新鲜缓存。
 - 无缓存且 provider 失败时错误短、清晰、无敏感信息。
@@ -396,16 +452,17 @@ npm run validate-plugin-submission-bundle -- /Users/mango/project/codex/weather-
 
 优先级从高到低：
 
-1. 增加 wttr fixtures，覆盖晴天高 UV、小雨、大雨、雷暴、强风、高温、hourly 缺失。
-2. 把 storage 读写抽成 `service/storage/` 或当前 adapter 内的独立模块，便于未来 shape migration。
-3. 生成可选 `signature.json` hash metadata，并纳入 release preflight。
-4. 如 OpenPet 后续支持调度能力，再评估定时早报；在官方能力出现前不做 daemon workaround。
+1. 做真实 Electron Control Center 视觉冒烟并归档截图/日志。
+2. 生成可选 `signature.json` hash metadata，并纳入 release preflight。
+3. 生成 OpenPet submission bundle 和 maintainer approval rehearsal。
+4. 决定 `.openpet-plugin.zip` 的长期支持策略，避免 legacy 与 unified extension 两条发布线长期漂移。
+5. 继续补充 wttr fixtures，覆盖晴天高 UV、小雨、大雨、雷暴、强风、高温、hourly 缺失。
 
 ## 10. 执行纪律
 
 - OpenPet 最新文档优先于本仓库文档。
 - `PLUGIN_CONTRACT.md` 优先于实现代码；契约改动先行。
 - 不使用 OpenPet 内部未文档化 API 作为运行依赖。
-- 不为绕过当前插件限制引入 localhost bridge、后台 daemon、外部代理服务、shell、任意 filesystem 或 secret config。
-- 每次 release 前重新生成 `openpet-plugin/index.js` 和 `.openpet-plugin.zip`。
+- 不为绕过 OpenPet 扩展生命周期引入外部 daemon、外部代理服务、任意 filesystem 或 secret config。
+- 每次 release 前重新生成 `openpet-plugin/index.js`、`.openpet-plugin.zip` 和 `.openpet-extension.zip`。
 - 若发现本文档与实现不一致，要么修实现，要么先明确修改契约，不能让两者长期漂移。

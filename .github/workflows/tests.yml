@@ -12,12 +12,17 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: weather-morning-report
-      - name: Checkout OpenPet
+      - name: Checkout OpenPet main
+        uses: actions/checkout@v6
+        with:
+          repository: dengyie/OpenPet
+          path: OpenPet-main
+      - name: Checkout OpenPet runtime smoke APIs
         uses: actions/checkout@v6
         with:
           repository: dengyie/OpenPet
           ref: codex/plugin-service-health-checks
-          path: OpenPet
+          path: OpenPet-runtime
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -27,12 +32,18 @@ jobs:
       - name: Install plugin dependencies
         run: npm ci
         working-directory: weather-morning-report
-      - name: Install OpenPet dependencies
+      - name: Install OpenPet main dependencies
         run: npm install
-        working-directory: OpenPet
+        working-directory: OpenPet-main
+      - name: Install OpenPet runtime dependencies
+        run: npm install
+        working-directory: OpenPet-runtime
       - name: Test plugin
         run: npm test
         working-directory: weather-morning-report
+        env:
+          OPENPET_VALIDATOR_REPO_ROOT: ../OpenPet-main
+          OPENPET_REPO_ROOT: ../OpenPet-runtime
       - name: Build plugin
         run: npm run build
         working-directory: weather-morning-report
@@ -45,9 +56,18 @@ jobs:
       - name: Package plugin
         run: npm run package:plugin
         working-directory: weather-morning-report
+      - name: Package unified extension
+        run: npm run package:extension
+        working-directory: weather-morning-report
+      - name: Lint unified extension artifact
+        run: npm run lint:extension
+        working-directory: weather-morning-report
       - name: Validate plugin directory with OpenPet
         run: npm run validate:plugin -- ../weather-morning-report/openpet-plugin
-        working-directory: OpenPet
+        working-directory: OpenPet-main
       - name: Validate plugin zip with OpenPet
         run: npm run validate:plugin -- ../weather-morning-report/release/weather-morning-report.openpet-plugin.zip
-        working-directory: OpenPet
+        working-directory: OpenPet-main
+      - name: Validate unified extension zip with OpenPet
+        run: npm run validate:plugin -- ../weather-morning-report/release/weather-morning-report.openpet-extension.zip
+        working-directory: OpenPet-main

@@ -10,8 +10,8 @@ const releaseDir = path.join(repoRoot, 'release')
 const archivePath = path.join(releaseDir, 'weather-morning-report.openpet-plugin.zip')
 
 test('package script creates an OpenPet plugin zip with only package files', async () => {
-  await rm(releaseDir, { recursive: true, force: true })
   await mkdir(releaseDir, { recursive: true })
+  await rm(archivePath, { force: true })
 
   execFileSync('npm', ['run', 'package:plugin'], { cwd: repoRoot, stdio: 'pipe' })
 

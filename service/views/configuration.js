@@ -215,6 +215,11 @@ const renderSecretHealth = (secretHealth = {}) => {
         : `<form method="post" action="/configuration/secrets/confirm-backup">
           <button type="submit"${managedPassword.present ? '' : ' disabled'}>标记已备份密钥</button>
         </form>`}
+      ${managedPassword.present
+        ? `<form method="post" action="/configuration/secrets/rotate-key">
+          <button type="submit">轮换本地密钥</button>
+        </form>`
+        : ''}
     </div>
   </article>`)
 }
@@ -229,9 +234,10 @@ const renderNotificationsForm = (values) => renderSection('通知与数据保留
   <button type="submit">保存通知设置</button>
 </form>`)
 
-const renderConfigurationPage = ({ configuration, errors = [], notices = [], smtpOperations = [], smtpHistoryFilters = {}, values = {} }) => renderPage({
+const renderConfigurationPage = ({ configuration, dashboardToken, errors = [], notices = [], smtpOperations = [], smtpHistoryFilters = {}, values = {} }) => renderPage({
   title: '天气早报配置中心',
   activePath: '/configuration',
+  dashboardToken,
   body: `<section class="hero config-hero">
     <p class="eyebrow">Configuration Workbench</p>
     <h1>配置中心</h1>

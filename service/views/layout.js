@@ -8,7 +8,13 @@ const escapeHtml = (value = '') => String(value)
 const checked = (value) => (value ? ' checked' : '')
 const selected = (actual, expected) => (actual === expected ? ' selected' : '')
 
-const renderPage = ({ title, activePath = '/', body }) => `<!doctype html>
+const injectDashboardToken = (body, dashboardToken) => {
+  if (!dashboardToken) return body
+  const input = `<input type="hidden" name="dashboard_token" value="${escapeHtml(dashboardToken)}">`
+  return String(body).replace(/(<form\b[^>]*\bmethod="post"[^>]*>)/gi, `$1${input}`)
+}
+
+const renderPage = ({ title, activePath = '/', body, dashboardToken }) => `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -27,7 +33,7 @@ const renderPage = ({ title, activePath = '/', body }) => `<!doctype html>
         <a href="/logs"${activePath === '/logs' ? ' aria-current="page"' : ''}>日志</a>
       </nav>
     </header>
-    ${body}
+    ${injectDashboardToken(body, dashboardToken)}
   </main>
 </body>
 </html>`

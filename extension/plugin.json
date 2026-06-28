@@ -45,7 +45,7 @@
       "The service binds to loopback by default.",
       "SMTP credentials are managed by the service, not by the OpenPet command runner.",
       "Cleanup is explicit and limited to known service-owned files under OPENPET_DATA_DIR, OPENPET_CACHE_DIR, and OPENPET_LOG_DIR.",
-      "This manifest targets the upcoming unified OpenPet extension model and is validated locally until the official validator is available."
+      "This manifest targets the current OpenPet main extension-entry model and is validated by OpenPet's validate:plugin command."
     ]
   },
   "config": "config.schema.json",

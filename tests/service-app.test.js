@@ -1,10 +1,11 @@
-const { existsSync, mkdtempSync, readFileSync, rmSync } = require('node:fs')
+const { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 
 const { createServiceApp } = require('../service/app')
+const { loadConfiguration } = require('../service/storage/configuration-store')
 const { loadDeliveryHistory } = require('../service/storage/delivery-history-store')
 const { loadSmtpOperationHistory } = require('../service/storage/smtp-operation-history-store')
 const {
@@ -16,6 +17,11 @@ const {
 const { loadSchedulerState } = require('../service/scheduler/state-store')
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const extractDashboardToken = (body) => {
+  const match = /name="dashboard_token" value="([^"]+)"/.exec(body)
+  assert.ok(match, 'expected dashboard token hidden input')
+  return match[1]
+}
 
 const createEmailSnapshot = () => ({
   schemaVersion: 1,
@@ -84,6 +90,7 @@ test('Fastify service exposes a redacted health endpoint and prepares service di
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'must-not-leak'
       }
     })
@@ -113,7 +120,8 @@ test('Fastify service serves the dashboard shell and active CSS', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -138,7 +146,8 @@ test('configuration page creates and renders service-owned default configuration
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -154,13 +163,151 @@ test('configuration page creates and renders service-owned default configuration
   })
 })
 
-test('configuration page exposes editable forms for each configuration domain', async () => {
+test('dashboard auth rejects mutating requests without the local token by default', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 403)
+    assert.match(response.body, /Dashboard token is required/)
+  })
+})
+
+test('dashboard pages inject local tokens into mutating forms', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const token = extractDashboardToken((await app.inject({ method: 'GET', url: '/configuration' })).body)
+    const createRecipient = await app.inject({
+      method: 'POST',
+      url: '/configuration/recipients',
+      payload: new URLSearchParams({
+        dashboard_token: token,
+        name: 'Mango',
+        email: 'mango@example.com',
+        location_name: 'Shanghai',
+        location_query: 'Shanghai',
+        timezone: 'Asia/Shanghai',
+        language: 'zh-CN',
+        enabled: 'on'
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    assert.equal(createRecipient.statusCode, 303)
+
+    const dashboard = await app.inject({ method: 'GET', url: '/' })
+    const configuration = await app.inject({ method: 'GET', url: '/configuration' })
+    const scheduler = await app.inject({ method: 'GET', url: '/scheduler' })
+    await app.close()
+
+    assert.equal(dashboard.statusCode, 200)
+    assert.equal(configuration.statusCode, 200)
+    assert.equal(scheduler.statusCode, 200)
+    assert.match(dashboard.body, /name="dashboard_token"/)
+    assert.match(configuration.body, /name="dashboard_token"/)
+    assert.match(scheduler.body, /name="dashboard_token"/)
+  })
+})
+
+test('dashboard auth accepts the local token for mutating requests', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    const token = extractDashboardToken(page.body)
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: `dashboard_token=${encodeURIComponent(token)}`,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(loadConfiguration({ dataDir }).notifications.secretKeyBackupConfirmed, true)
+  })
+})
+
+test('dashboard auth ignores query-string tokens for mutating requests', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    const token = extractDashboardToken(page.body)
+    const response = await app.inject({
+      method: 'POST',
+      url: `/configuration/secrets/confirm-backup?dashboard_token=${encodeURIComponent(token)}`,
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 403)
+    assert.equal(loadConfiguration({ dataDir }).notifications.secretKeyBackupConfirmed, false)
+  })
+})
+
+test('dashboard auth reuses existing token files and locks down permissions', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    mkdirSync(dataDir, { recursive: true })
+    const tokenPath = path.join(dataDir, '.dashboard-token')
+    writeFileSync(tokenPath, 'existing-local-token\n', { mode: 0o644 })
+
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir
+      }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(extractDashboardToken(page.body), 'existing-local-token')
+    assert.equal(statSync(tokenPath).mode & 0o777, 0o600)
+  })
+})
+
+test('configuration page exposes editable forms for each configuration domain', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: {
+        OPENPET_DATA_DIR: dataDir,
+        OPENPET_CACHE_DIR: cacheDir,
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -190,7 +337,8 @@ test('logs page renders an empty state when the log file is missing', async () =
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -208,7 +356,8 @@ test('dashboard links to configuration logs and active CSS', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -229,7 +378,8 @@ test('configuration page escapes user-controlled values', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -253,7 +403,8 @@ test('recipient form rejects invalid email and preserves safe form values', asyn
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -277,7 +428,8 @@ test('recipient form accepts a valid recipient and persists it', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -303,7 +455,8 @@ test('schedule form rejects unknown recipient ids', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -326,7 +479,8 @@ test('schedule form rejects impossible local times', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
     await app.inject({
@@ -355,7 +509,8 @@ test('smtp form never echoes submitted password', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -383,7 +538,8 @@ test('smtp form stores passwords in managed secret storage instead of configurat
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -412,6 +568,7 @@ test('smtp transport prefers managed smtp password over runtime env fallback', a
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'env-secret'
       },
       createEmailTransport: ({ env }) => {
@@ -463,7 +620,8 @@ test('smtp clear-password route removes managed secret and resets password saved
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -493,7 +651,8 @@ test('smtp clear-password route removes managed secret and resets password saved
 test('configuration page renders secret health backup warning without leaking secret material', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
-      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
     })
 
     await app.inject({
@@ -517,7 +676,8 @@ test('configuration page renders secret health backup warning without leaking se
 test('secret backup confirmation routes toggle notification metadata', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
-      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
     })
 
     const confirmed = await app.inject({
@@ -547,7 +707,8 @@ test('secret backup confirmation routes toggle notification metadata', async () 
 test('configuration page renders healthy secret backup state after confirmation', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
-      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
     })
 
     await app.inject({
@@ -578,7 +739,8 @@ test('configuration page renders degraded secret health without failing', async 
     saveStoredSmtpPassword(paths, 'super-secret-password')
     require('node:fs').writeFileSync(secretKeyPath(paths), 'not-valid-base64')
     const app = createServiceApp({
-      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
     })
 
     const page = await app.inject({ method: 'GET', url: '/configuration' })
@@ -596,7 +758,8 @@ test('smtp form can replace corrupt managed secret storage after health warning'
     require('node:fs').mkdirSync(dataDir, { recursive: true })
     require('node:fs').writeFileSync(secretsPath(paths), '{"smtpPassword":')
     const app = createServiceApp({
-      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir }
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
     })
 
     const degradedPage = await app.inject({ method: 'GET', url: '/configuration' })
@@ -616,13 +779,175 @@ test('smtp form can replace corrupt managed secret storage after health warning'
   })
 })
 
+test('configuration page renders a key rotation action for healthy managed secret state', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const page = await app.inject({ method: 'GET', url: '/configuration' })
+    await app.close()
+
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /密钥与备份状态/)
+    assert.match(page.body, /action="\/configuration\/secrets\/rotate-key"/)
+    assert.doesNotMatch(page.body, /super-secret/)
+  })
+})
+
+test('secret key rotation route rotates the key and resets backup confirmation', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/rotate-key',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    const configuration = JSON.parse(readFileSync(path.join(dataDir, 'configuration.json'), 'utf8'))
+    await app.close()
+
+    assert.equal(response.statusCode, 303)
+    assert.equal(configuration.notifications.secretKeyBackupConfirmed, false)
+    assert.match(response.headers.location || '', /^\/configuration\?smtp_notice=/)
+  })
+})
+
+test('secret key rotation route fails safely when managed secret is not decryptable', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const app = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
+    })
+
+    await app.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    require('node:fs').writeFileSync(secretsPath({ dataDir, cacheDir, logDir }), '{"smtpPassword":')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/configuration/secrets/rotate-key',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await app.close()
+
+    assert.equal(response.statusCode, 502)
+    assert.match(response.body, /已保存的 SMTP 密码无法解密|stored SMTP password could not be decrypted/)
+    assert.doesNotMatch(response.body, /super-secret/)
+  })
+})
+
+test('secret key rotation route rolls back when configuration persistence fails', async () => {
+  await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
+    const setupApp = createServiceApp({
+      env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
+    })
+
+    await setupApp.inject({
+      method: 'POST',
+      url: '/configuration/smtp',
+      payload: 'host=smtp.example.com&port=587&username=mango&password=super-secret&security=starttls&sender_email=mango%40example.com',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await setupApp.inject({
+      method: 'POST',
+      url: '/configuration/secrets/confirm-backup',
+      payload: '',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' }
+    })
+    await setupApp.close()
+
+    const appModulePath = require.resolve('../service/app')
+    const configurationStoreModulePath = require.resolve('../service/storage/configuration-store')
+    delete require.cache[appModulePath]
+    delete require.cache[configurationStoreModulePath]
+
+    let saveCalls = 0
+    const configurationFile = path.join(dataDir, 'configuration.json')
+    const originalWriteFileSync = require('node:fs').writeFileSync
+    const beforeKey = readFileSync(secretKeyPath({ dataDir, cacheDir, logDir }), 'utf8')
+    const beforeSecret = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+    try {
+      require('node:fs').writeFileSync = (...args) => {
+        if (String(args[0]) === configurationFile) {
+          saveCalls += 1
+          if (saveCalls >= 2) {
+            throw new Error('simulated configuration persistence failure')
+          }
+        }
+        return originalWriteFileSync(...args)
+      }
+
+      const { createServiceApp: createFreshServiceApp } = require('../service/app')
+      const app = createFreshServiceApp({
+        env: { OPENPET_DATA_DIR: dataDir, OPENPET_CACHE_DIR: cacheDir, OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled' }
+      })
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/configuration/secrets/rotate-key',
+        payload: '',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' }
+      })
+
+      const afterKey = readFileSync(secretKeyPath({ dataDir, cacheDir, logDir }), 'utf8')
+      const afterSecret = loadStoredSmtpPassword({ dataDir, cacheDir, logDir })
+      const configuration = JSON.parse(readFileSync(configurationFile, 'utf8'))
+      await app.close()
+
+      assert.equal(response.statusCode, 502)
+      assert.match(response.body, /rotation failed/)
+      assert.equal(afterKey, beforeKey)
+      assert.equal(afterSecret.password, beforeSecret.password)
+      assert.equal(configuration.notifications.secretKeyBackupConfirmed, true)
+    } finally {
+      require('node:fs').writeFileSync = originalWriteFileSync
+      delete require.cache[appModulePath]
+      delete require.cache[configurationStoreModulePath]
+    }
+  })
+})
+
 test('configuration page renders SMTP operational controls', async () => {
   await withTempServiceDirs(async ({ dataDir, cacheDir, logDir }) => {
     const app = createServiceApp({
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
     await app.inject({
@@ -648,7 +973,8 @@ test('configuration page can render SMTP operation success notices', async () =>
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
     await app.inject({
@@ -674,7 +1000,8 @@ test('configuration page renders recent SMTP operational history', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -717,7 +1044,8 @@ test('configuration page filters SMTP operational history and preserves selected
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -772,7 +1100,8 @@ test('SMTP operational history JSON export honors active filters', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -833,7 +1162,8 @@ test('SMTP operational history CSV export honors active filters and downloads as
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -885,7 +1215,8 @@ test('SMTP operational history export rejects unsupported formats', async () => 
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -917,6 +1248,7 @@ test('smtp test connection route verifies current configuration without sending 
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'runtime-secret'
       },
       emailTransport: transport
@@ -951,7 +1283,8 @@ test('smtp test connection route appends operational history on success', async 
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -988,7 +1321,8 @@ test('page-mode smtp test connection redirects to configuration with success not
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -1024,6 +1358,7 @@ test('smtp test connection route appends redacted operational history on failure
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       emailTransport: {
@@ -1065,6 +1400,7 @@ test('smtp test connection route redacts transport failures', async () => {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       emailTransport: {
@@ -1102,6 +1438,7 @@ test('smtp test connection route fails safely when managed secret storage is cor
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'env-secret'
       },
       emailTransport: {
@@ -1148,6 +1485,7 @@ test('smtp test connection route fails safely when managed secret file is unread
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'env-secret'
       },
       emailTransport: {
@@ -1191,6 +1529,7 @@ test('page-mode smtp test connection failure re-renders configuration with redac
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       emailTransport: {
@@ -1229,7 +1568,8 @@ test('smtp test connection route rejects missing configured sender before transp
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async verify () {
@@ -1266,7 +1606,8 @@ test('branding form rejects invalid accent color', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1289,7 +1630,8 @@ test('manual preview renders confirmation without sending email', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
     await app.inject({
@@ -1327,7 +1669,8 @@ test('email preview route renders HTML without sending email', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: transport,
       fetchEmailReport: async () => ({
@@ -1363,6 +1706,7 @@ test('email preview route redacts unexpected report errors', async () => {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       fetchEmailReport: async () => {
@@ -1400,6 +1744,7 @@ test('email send-now route sends through injected transport and records history'
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'must-not-leak'
       },
       emailTransport: transport,
@@ -1445,6 +1790,7 @@ test('email send-now route uses SMTP transport factory by default', async () => 
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'runtime-secret'
       },
       createEmailTransport: ({ env }) => {
@@ -1509,6 +1855,7 @@ test('email test route sends operational test message without delivery history',
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: 'runtime-secret'
       },
       emailTransport: transport
@@ -1554,7 +1901,8 @@ test('email test route appends operational history on success', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async send () {
@@ -1598,7 +1946,8 @@ test('page-mode email test redirects to configuration with recipient success not
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async send () {
@@ -1641,6 +1990,7 @@ test('email test route appends redacted operational history on failure', async (
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       emailTransport: {
@@ -1686,7 +2036,8 @@ test('email test route appends operational history for missing recipients', asyn
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1715,6 +2066,7 @@ test('page-mode email test failure re-renders configuration with redacted warnin
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       emailTransport: {
@@ -1759,7 +2111,8 @@ test('email test route rejects missing configured sender before transport send',
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       emailTransport: {
         async send () {
@@ -1802,7 +2155,8 @@ test('email send-now route rejects unknown recipients safely', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       fetchEmailReport: async () => ({
         snapshot: createEmailSnapshot(),
@@ -1833,6 +2187,7 @@ test('email send-now route redacts unexpected report errors', async () => {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
         OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled',
         SMTP_PASSWORD: secret
       },
       fetchEmailReport: async () => {
@@ -1867,7 +2222,8 @@ test('scheduler page renders queue and worker status', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1887,7 +2243,8 @@ test('scheduler enqueue-due route creates due automatic jobs', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       },
       schedulerNow: () => new Date('2026-06-08T00:30:00.000Z')
     })
@@ -1923,7 +2280,8 @@ test('defaults form rejects invalid report type', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1946,7 +2304,8 @@ test('defaults form rejects impossible local times', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1969,7 +2328,8 @@ test('notifications form rejects negative retention days', async () => {
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
@@ -1992,7 +2352,8 @@ test('empty form submissions return validation errors instead of server errors',
       env: {
         OPENPET_DATA_DIR: dataDir,
         OPENPET_CACHE_DIR: cacheDir,
-        OPENPET_LOG_DIR: logDir
+        OPENPET_LOG_DIR: logDir,
+        OPENPET_DASHBOARD_AUTH: 'disabled'
       }
     })
 
