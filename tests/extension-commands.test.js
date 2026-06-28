@@ -72,6 +72,7 @@ test('cleanup command dry-runs known service-owned files without deleting data',
       path.join(dataDir, 'configuration.json'),
       path.join(dataDir, 'delivery-history.json'),
       path.join(dataDir, 'scheduler-state.json'),
+      path.join(dataDir, '.dashboard-token'),
       path.join(cacheDir, 'weather-command-cache.json'),
       path.join(logDir, 'service.log')
     ]
@@ -103,6 +104,7 @@ test('cleanup command deletes only known service-owned files when confirmed', ()
       path.join(dataDir, 'configuration.json'),
       path.join(dataDir, 'delivery-history.json'),
       path.join(dataDir, 'scheduler-state.json'),
+      path.join(dataDir, '.dashboard-token'),
       path.join(cacheDir, 'weather-command-cache.json'),
       path.join(logDir, 'service.log')
     ]

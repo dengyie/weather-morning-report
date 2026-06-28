@@ -49,6 +49,8 @@ npm run validate:plugin -- /Users/mango/project/codex/weather-morning-report/rel
 
 This validates package structure, manifest, safe paths, permissions, network allowlist, extension entries, zip safety, signature metadata state, file hashes, and package hash through OpenPet's own validation code.
 
+CI/release workflows validate package artifacts against OpenPet `main`. The runtime smoke test can still point `OPENPET_REPO_ROOT` at the temporary OpenPet runtime-service branch until those service lifecycle APIs are available on `main`; this must not replace main-branch package validation.
+
 ## 4. Submission Rehearsal
 
 For OpenPet catalog or reviewer handoff, generate reviewer artifacts from `/Users/mango/project/codex/OpenPet`.
@@ -84,6 +86,8 @@ The release zip must not include:
 - temporary files
 
 The unified extension zip must include active runtime files needed by declared entries: `commands/`, `core/`, `rendering/`, `service/`, `static/`, `compat/openpet-main.js`, `package.json`, `plugin.json`, `config.schema.json`, and `README.md`.
+
+The GitHub tag release workflow must upload both `release/weather-morning-report.openpet-plugin.zip` and `release/weather-morning-report.openpet-extension.zip`.
 
 The source of truth is the repository source plus build/package scripts. Do not hand-edit generated zips or `openpet-plugin/index.js` for release fixes.
 

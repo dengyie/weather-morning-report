@@ -4,7 +4,7 @@ const { execFileSync } = require('node:child_process')
 const path = require('node:path')
 
 const repoRoot = path.resolve(__dirname, '..')
-const openPetRoot = path.resolve(repoRoot, '../OpenPet')
+const openPetRoot = path.resolve(process.env.OPENPET_VALIDATOR_REPO_ROOT || path.join(repoRoot, '../OpenPet'))
 const archivePath = path.join(repoRoot, 'release/weather-morning-report.openpet-plugin.zip')
 
 test('OpenPet validator accepts the packaged plugin zip', () => {

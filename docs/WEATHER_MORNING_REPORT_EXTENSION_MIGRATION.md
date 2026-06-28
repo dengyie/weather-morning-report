@@ -369,7 +369,7 @@ Promotion order:
 3. Port `render_html()` behavior into `rendering/email-renderer.js`.
 4. Port dashboard and configuration pages into active Web views.
 5. Port manual preview flow.
-6. Decide whether login/forgot-password remain active, depending on dashboard auth design.
+6. Keep login/forgot-password as optional future UX only; the active service uses local dashboard tokens.
 
 Acceptance criteria:
 
@@ -441,7 +441,7 @@ First-version service defaults:
 - expose `/health` without sensitive data;
 - keep dashboard auth simple and service-owned.
 
-The legacy login pages can be used as visual/product references. Whether they become active pages depends on whether the first service uses a token-only dashboard or admin password auth.
+The active service uses token-only dashboard protection for mutating routes. The legacy login pages can remain visual/product references if a later admin-password UX is needed.
 
 ## 6. Manifest Draft
 
@@ -553,9 +553,9 @@ Minimum routes:
 
 ### 7.2 Authentication
 
-First version can use a local token stored in the service data directory.
+The current service uses a local token stored in the service data directory.
 
-OpenPet dashboard opening may include a tokenized local URL if needed.
+Rendered dashboard forms include the token as a hidden field, and mutating routes reject requests without a valid token.
 
 Keep this simple and local-first. Do not turn the service into a public Web app.
 
@@ -1880,4 +1880,4 @@ First version should not:
 - SMTP settings should live in service-managed storage under `OPENPET_DATA_DIR`; `.env` may be supported for developer overrides.
 - Production packages should aim to be self-contained, but `setup` remains supported.
 - Current `openpet-plugin/` should remain valid as the legacy compatibility path while `.openpet-extension.zip` is the preferred service/dashboard-capable artifact.
-- Login/forgot-password pages are optional until dashboard auth mode is chosen.
+- Login/forgot-password pages are optional future UX; current dashboard auth is local-token based.

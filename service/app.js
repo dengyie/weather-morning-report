@@ -28,6 +28,7 @@ const { renderLogsPage } = require('./views/logs')
 const { renderManualPreviewPage } = require('./views/manual-preview')
 const { renderSchedulerPage } = require('./views/scheduler')
 const { enqueueDueJobs, queueStatus } = require('./scheduler/queue')
+const { dashboardAuthEnabled, ensureDashboardToken, verifyDashboardToken } = require('./dashboard-auth')
 const { version } = require('../package.json')
 
 const findRecipient = (configuration, recipientId) => configuration.recipients
@@ -134,6 +135,7 @@ const createServiceApp = ({
   const paths = ensureServicePaths(env)
   const resolvedEmailTransport = emailTransport || createEmailTransport({ env })
   const allowResolvedPassword = !emailTransport
+  const dashboardToken = dashboardAuthEnabled(env) ? ensureDashboardToken(paths) : ''
   const app = fastify({ logger: false })
 
   const secretHealthForView = (configuration) => inspectSecretHealth(paths, {
@@ -155,6 +157,17 @@ const createServiceApp = ({
     done(null, Object.fromEntries(new URLSearchParams(body || '')))
   })
 
+  app.addHook('preHandler', async (request, reply) => {
+    if (!dashboardAuthEnabled(env) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
+    if (verifyDashboardToken(request, dashboardToken)) return
+    return reply.code(403).send({ ok: false, error: 'Dashboard token is required' })
+  })
+
+  const renderConfiguration = (options) => renderConfigurationPage({
+    dashboardToken,
+    ...options
+  })
+
   app.get('/health', async () => ({
     ok: true,
     service: 'weather-morning-report',
@@ -170,7 +183,7 @@ const createServiceApp = ({
   app.get('/', async (_request, reply) => {
     const configuration = loadConfiguration(paths)
     reply.type('text/html; charset=utf-8')
-    return renderDashboardPage({ configuration })
+    return renderDashboardPage({ configuration, dashboardToken })
   })
 
   app.get('/configuration', async (_request, reply) => {
@@ -181,7 +194,7 @@ const createServiceApp = ({
     })
     reply.type('text/html; charset=utf-8')
     const notice = String(_request.query?.smtp_notice || '').trim()
-    return renderConfigurationPage({
+    return renderConfiguration({
       configuration: configurationModelForView(configuration, { secretHealth }),
       notices: notice ? [notice] : [],
       smtpOperations: records,
@@ -223,7 +236,7 @@ const createServiceApp = ({
   app.get('/scheduler', async (_request, reply) => {
     const status = queueStatus(paths, { now: schedulerNow() })
     reply.type('text/html; charset=utf-8')
-    return renderSchedulerPage({ status })
+    return renderSchedulerPage({ status, dashboardToken })
   })
 
   app.post('/scheduler/enqueue-due', async (_request, reply) => {
@@ -241,7 +254,7 @@ const createServiceApp = ({
     const result = validateRecipient(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { recipient: result.values } })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors, values: { recipient: result.values } })
     }
     const id = result.value.id || `recipient-${configuration.recipients.length + 1}`
     const recipient = { ...result.value, id }
@@ -255,7 +268,7 @@ const createServiceApp = ({
     const result = validateDefaults(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { defaults: result.values } })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors, values: { defaults: result.values } })
     }
     configuration.newUserDefaults = result.value
     saveConfiguration(paths, configuration)
@@ -267,7 +280,7 @@ const createServiceApp = ({
     const result = validateSchedule(request.body, configuration)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { schedule: result.values } })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors, values: { schedule: result.values } })
     }
     const id = result.value.id || `schedule-${configuration.schedules.length + 1}`
     const schedule = { ...result.value, id }
@@ -283,7 +296,7 @@ const createServiceApp = ({
     const result = validateSmtp(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({
+      return renderConfiguration({
         configuration: configurationModelForView(configuration, {
           hasManagedPassword: managedPasswordPresent,
           secretHealth
@@ -356,7 +369,7 @@ const createServiceApp = ({
     })
     if (!result.ok) {
       reply.code(502).type('text/html; charset=utf-8')
-      return renderConfigurationPage({
+      return renderConfiguration({
         configuration: configurationModelForView(configuration),
         errors: [result.error]
       })
@@ -399,7 +412,7 @@ const createServiceApp = ({
       }))
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
-        return renderConfigurationPage({
+        return renderConfiguration({
           configuration: configurationModelForView(configuration, { hasManagedPassword: managedPasswordPresent }),
           errors: [`测试 SMTP 连接失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)
@@ -414,7 +427,7 @@ const createServiceApp = ({
     const result = validateBranding(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { branding: result.values } })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors, values: { branding: result.values } })
     }
     configuration.branding = result.value
     saveConfiguration(paths, configuration)
@@ -426,7 +439,7 @@ const createServiceApp = ({
     const result = validateNotifications(request.body)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors, values: { notifications: result.values } })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors, values: { notifications: result.values } })
     }
     configuration.notifications = result.value
     saveConfiguration(paths, configuration)
@@ -438,7 +451,7 @@ const createServiceApp = ({
     const result = validateManualPreview(request.body, configuration)
     if (!result.ok) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: result.errors })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: result.errors })
     }
     reply.type('text/html; charset=utf-8')
     return renderManualPreviewPage({ recipient: result.value.recipient, reportType: result.value.reportType })
@@ -451,7 +464,7 @@ const createServiceApp = ({
     const recipient = findRecipient(configuration, recipientId)
     if (!recipient) {
       reply.code(400).type('text/html; charset=utf-8')
-      return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
+      return renderConfiguration({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
     }
     try {
       const report = await fetchEmailReport({ recipient, reportType, configuration })
@@ -509,7 +522,7 @@ const createServiceApp = ({
       }))
       if (pageMode) {
         reply.code(400).type('text/html; charset=utf-8')
-        return renderConfigurationPage({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
+        return renderConfiguration({ configuration: configurationModelForView(configuration), errors: ['收件人不存在'] })
       }
       return reply.code(400).send({ ok: false, error: '收件人不存在' })
     }
@@ -550,7 +563,7 @@ const createServiceApp = ({
       }))
       if (pageMode) {
         reply.code(502).type('text/html; charset=utf-8')
-        return renderConfigurationPage({
+        return renderConfiguration({
           configuration: configurationModelForView(configuration, { hasManagedPassword: managedPasswordPresent }),
           errors: [`发送测试邮件失败：${redacted}`],
           smtpOperations: loadSmtpOperationHistory(paths)

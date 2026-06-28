@@ -10,6 +10,7 @@ const cleanupTargets = (env) => {
     { id: 'configuration', file: path.join(paths.dataDir, 'configuration.json') },
     { id: 'delivery-history', file: path.join(paths.dataDir, 'delivery-history.json') },
     { id: 'scheduler-state', file: path.join(paths.dataDir, 'scheduler-state.json') },
+    { id: 'dashboard-token', file: path.join(paths.dataDir, '.dashboard-token') },
     { id: 'command-cache', file: path.join(commandCacheDir, 'weather-command-cache.json') },
     { id: 'service-log', file: path.join(paths.logDir, 'service.log') }
   ]

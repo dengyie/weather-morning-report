@@ -1,8 +1,9 @@
 const { escapeHtml, renderPage } = require('./layout')
 
-const renderDashboardPage = ({ configuration }) => renderPage({
+const renderDashboardPage = ({ configuration, dashboardToken }) => renderPage({
   title: '天气早报控制台',
   activePath: '/',
+  dashboardToken,
   body: `<section class="hero">
     <p class="eyebrow">OpenPet Companion Service</p>
     <h1>Weather Morning Report</h1>

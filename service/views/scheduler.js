@@ -2,9 +2,10 @@ const { escapeHtml, renderPage } = require('./layout')
 
 const metric = (label, value) => `<article class="card"><p class="eyebrow">${escapeHtml(label)}</p><p class="metric-value">${escapeHtml(value)}</p></article>`
 
-const renderSchedulerPage = ({ status }) => renderPage({
+const renderSchedulerPage = ({ status, dashboardToken }) => renderPage({
   title: '天气早报调度队列',
   activePath: '/scheduler',
+  dashboardToken,
   body: `<section class="hero">
     <p class="eyebrow">Scheduler Queue</p>
     <h1>调度队列</h1>
